@@ -1,6 +1,6 @@
 import { PreviewRect } from './core/nodes/preview/PreviewRect';
 import type { ToolName } from './index';
-import type { RectangleNode } from './core/nodes/rectangle';
+import type { RectangleNode } from './core/nodes/RectangleNode';
 import { Container } from 'pixi.js';
 
 export class PointerController {
@@ -42,9 +42,9 @@ export class PointerController {
           width: rect.w,
           height: rect.h,
         };
-        
+
         const event = new CustomEvent('shape:created', {
-          detail: { shape: rectangleNode }
+          detail: { shape: rectangleNode },
         });
         window.dispatchEvent(event);
       }
