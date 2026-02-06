@@ -1,6 +1,8 @@
 import { PreviewRect } from './core/nodes/preview/PreviewRect';
 import type { CCDApp } from './index';
 import type { ToolName } from './index';
+import type { RectangleNode } from './core/nodes/rectangle';
+import { RectangleObject } from './core/nodes/rectangle/RectangleObject';
 
 export class PointerController {
   private app: CCDApp;
@@ -34,8 +36,17 @@ export class PointerController {
     if (this.activeTool === 'rectangle') {
       const rect = this.previewRect.end();
       if (rect) {
-        // Here you can handle the final rectangle creation
-        console.log('Rectangle created:', rect);
+        const rectangleNode: RectangleNode = {
+          type: 'rectangle',
+          id: crypto.randomUUID(),
+          x: rect.x,
+          y: rect.y,
+          width: rect.w,
+          height: rect.h,
+        };
+        
+        const rectangleObject = new RectangleObject(rectangleNode);
+        this.app.objectLayer.addChild(rectangleObject);
       }
     }
   }
