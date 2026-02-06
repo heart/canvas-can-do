@@ -239,6 +239,8 @@ export class SelectionManager {
       this.selectionGraphics.circle(rotationX, rotationHandleY, 5);
       this.selectionGraphics.fill({ color: 0xffffff });
       this.selectionGraphics.stroke({ color: 0x0099ff, width: 1 });
+      }
     }
   }
+}
 }
