@@ -111,8 +111,8 @@ export class PointerController {
         shape = new LineNode({
           startX: this.preview.start.x,
           startY: this.preview.start.y,
-          endX: this.last.x,
-          endY: this.last.y,
+          endX: this.preview.last.x,
+          endY: this.preview.last.y,
           style: defaultStyle,
         });
         break;
