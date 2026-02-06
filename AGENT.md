@@ -1,13 +1,13 @@
 # AGENT.md — Canvas Can Do
 
 ## Project Overview
-**Canvas Can Do** is a modern, canvas-based **vector graphics editor engine** for the web.
+**Canvas Can Do** is a modern, transform-based **vector graphics editor engine** for the web.
 
-The goal of this project is to build a **framework-agnostic, vanilla-first** editor core that supports:
-- object-based vector graphics
-- precise interaction (selection, transform, hit-testing)
-- scalable rendering (Pixi / WebGL)
-- future extensibility (Canvas2D, WebGL, WASM)
+The core of the project is built around a powerful Transform2D system that provides:
+- Matrix-based transformations (scale, rotation, translation)
+- Pivot point handling
+- Chainable transform operations
+- Clean mathematical foundation
 
 This project intentionally avoids tight coupling with UI frameworks (Vue/React/etc.).
 UI layers should act as **hosts**, not as part of the engine logic.
