@@ -115,11 +115,27 @@ export class PointerController {
         break;
 
       case 'ellipse':
+        let width = rect.w;
+        let height = rect.h;
+        let x = rect.x + rect.w / 2;
+        let y = rect.y + rect.h / 2;
+
+        if (e.shiftKey) {
+          const size = Math.max(rect.w, rect.h);
+          width = size;
+          height = size;
+          if (rect.w < rect.h) {
+            x = this.preview.start.x + (this.preview.last.x - this.preview.start.x) / 2;
+          } else {
+            y = this.preview.start.y + (this.preview.last.y - this.preview.start.y) / 2;
+          }
+        }
+
         shape = new EllipseNode({
-          width: rect.w,
-          height: rect.h,
-          x: rect.x + rect.w / 2,
-          y: rect.y + rect.h / 2,
+          width,
+          height,
+          x,
+          y,
           style: defaultStyle,
         });
         break;
