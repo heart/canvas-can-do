@@ -75,6 +75,10 @@ export class LineNode extends BaseNode {
         alpha: opacity
       });
     }
+
+    // Update width and height based on line extent
+    this._width = Math.abs(this.endX - this.startX);
+    this._height = Math.abs(this.endY - this.startY);
   }
 
   setStyle(style: Partial<Style>): this {

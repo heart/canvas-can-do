@@ -51,10 +51,16 @@ export class LineTransformController {
       // Start point is always at origin relative to position
       this.activeNode.startX = 0;
       this.activeNode.startY = 0;
+
+      // Redraw the line
+      this.activeNode.redraw();
     } else if (this.activeHandle === 'end') {
       // Simply update end point relative to current position
       this.activeNode.endX = this.startState.endX + dx;
       this.activeNode.endY = this.startState.endY + dy;
+      
+      // Redraw the line
+      this.activeNode.redraw();
     } else if (this.activeHandle === 'move') {
       // Move the entire line by updating position only
       this.activeNode.position.set(
