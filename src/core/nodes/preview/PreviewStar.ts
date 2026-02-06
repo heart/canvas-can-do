@@ -24,12 +24,8 @@ export class PreviewStar extends PreviewBase {
       );
     }
 
-    // Fill with transparency
     this.g.poly(starPoints);
     this.g.fill({ color: 0x000000, alpha: 0.08 });
-
-    // Stroke
-    this.g.poly(starPoints);
     this.g.stroke({ color: 0x0be666, alpha: 0.8, width: 1 });
   }
 }
