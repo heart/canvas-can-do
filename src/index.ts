@@ -4,12 +4,15 @@ import type { ShapeCreatedEvent } from './events';
 
 export const version = '0.0.0';
 
-export type ToolName = 'select' | 'rectangle' | 'circle' | 'text' | 'pan';
+export type ToolName = 'select' | 'rectangle' | 'circle' | 'text' | 'line' | 'ellipse' | 'star' | 'pan';
 
 export const TOOL_CURSOR: Record<ToolName, string | null> = {
   select: null,
   rectangle: 'crosshair',
   circle: 'crosshair',
+  ellipse: 'crosshair',
+  line: 'crosshair',
+  star: 'crosshair',
   text: 'text',
   pan: 'grab',
 };

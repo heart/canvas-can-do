@@ -1,7 +1,7 @@
-import type { RectangleNode } from './core/nodes/RectangleNode';
+import type { BaseNode } from './core/nodes/BaseNode';
 
 export type ShapeCreatedEvent = CustomEvent<{
-  shape: RectangleNode;
+  shape: BaseNode;
 }>;
 
 declare global {
