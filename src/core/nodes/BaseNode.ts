@@ -1,3 +1,4 @@
+import { Container } from 'pixi.js';
 import { Transform2D } from '../math/Transform2D';
 import type { Vec2 } from '../math/Vec2';
 import { vec2 } from '../math/Vec2';
@@ -11,39 +12,47 @@ export interface Style {
   opacity?: number;
 }
 
-export interface BaseNode {
-  id: string;
-  type: NodeType;
-
-  parentId?: string;
-  children?: string[];
-
-  transform: Transform2D; // local transform
-  style: Style;
-
-  visible: boolean;
-  locked: boolean;
-}
-
-export class BaseNodeImpl implements BaseNode {
-  id: string;
-  type: NodeType;
-  parentId?: string;
-  children?: string[];
+export class BaseNode extends Container {
+  readonly id: string;
+  readonly type: NodeType;
   transform: Transform2D;
   style: Style;
-  visible: boolean;
   locked: boolean;
 
-  constructor(node: BaseNode) {
-    this.id = node.id;
-    this.type = node.type;
-    this.parentId = node.parentId;
-    this.children = node.children;
-    this.transform = node.transform;
-    this.style = node.style;
-    this.visible = node.visible;
-    this.locked = node.locked;
+  constructor(options: {
+    id?: string;
+    type: NodeType;
+    transform?: Transform2D;
+    style?: Style;
+    visible?: boolean;
+    locked?: boolean;
+  }) {
+    super();
+    this.id = options.id ?? crypto.randomUUID();
+    this.type = options.type;
+    this.transform = options.transform ?? new Transform2D();
+    this.style = options.style ?? {
+      fill: '#ffffff',
+      stroke: '#000000',
+      strokeWidth: 1,
+      opacity: 1
+    };
+    this.visible = options.visible ?? true;
+    this.locked = options.locked ?? false;
+    
+    // Initial transform sync
+    this.syncTransform();
+  }
+
+  protected syncTransform() {
+    this.position.set(this.transform.x, this.transform.y);
+    this.rotation = this.transform.rotation;
+    this.scale.set(this.transform.scaleX, this.transform.scaleY);
+  }
+
+  updateTransform() {
+    this.syncTransform();
+    super.updateTransform();
   }
 
   // Position

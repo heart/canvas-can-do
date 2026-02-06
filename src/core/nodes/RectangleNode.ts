@@ -1,17 +1,13 @@
-import { Container, Graphics } from 'pixi.js';
-import { Transform2D } from '../math/Transform2D';
+import { Graphics } from 'pixi.js';
+import { BaseNode } from './BaseNode';
+import type { Transform2D } from '../math/Transform2D';
 import type { Style } from './BaseNode';
-import type { Vec2 } from '../math/Vec2';
 
-export class RectangleNode extends Container {
+export class RectangleNode extends BaseNode {
   readonly type = 'rectangle' as const;
-  readonly id: string;
-
+  width: number;
+  height: number;
   cornerRadius?: number;
-  transform: Transform2D;
-  style: Style;
-  locked: boolean;
-
   private graphics: Graphics;
 
   constructor(options: {
@@ -24,21 +20,18 @@ export class RectangleNode extends Container {
     visible?: boolean;
     locked?: boolean;
   }) {
-    super();
+    super({
+      id: options.id,
+      type: 'rectangle',
+      transform: options.transform,
+      style: options.style,
+      visible: options.visible,
+      locked: options.locked
+    });
 
-    this.id = options.id ?? crypto.randomUUID();
     this.width = options.width;
     this.height = options.height;
     this.cornerRadius = options.cornerRadius;
-    this.transform = options.transform ?? new Transform2D();
-    this.style = options.style ?? {
-      fill: '#ffffff',
-      stroke: '#000000',
-      strokeWidth: 1,
-      opacity: 1,
-    };
-    this.visible = options.visible ?? true;
-    this.locked = options.locked ?? false;
 
     // Setup graphics
     this.graphics = new Graphics();
