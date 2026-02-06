@@ -5,15 +5,13 @@ import { TransformController } from './TransformController';
 export class SelectionManager {
   private selectedNodes: Set<BaseNode> = new Set();
   private selectionGraphics: Graphics;
-  private toolsLayer: Container;
   private transformController: TransformController;
 
   constructor(toolsLayer: Container) {
-    this.toolsLayer = toolsLayer;
-    this.transformController = new TransformController(toolsLayer);
+    this.transformController = new TransformController();
 
     this.selectionGraphics = new Graphics();
-    this.toolsLayer.addChild(this.selectionGraphics);
+    toolsLayer.addChild(this.selectionGraphics);
   }
 
   startTransform(point: Point, handle?: string) {

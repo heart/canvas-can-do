@@ -1,4 +1,4 @@
-import { Container, Point } from 'pixi.js';
+import { Point } from 'pixi.js';
 import type { BaseNode } from '../nodes/BaseNode';
 
 type TransformMode = 'none' | 'move' | 'resize' | 'rotate';
@@ -6,7 +6,7 @@ type TransformMode = 'none' | 'move' | 'resize' | 'rotate';
 export class TransformController {
   private mode: TransformMode = 'none';
   private startPoint: Point | null = null;
-  private startTransform: {
+  private startState: {
     x: number;
     y: number;
     width: number;
@@ -16,7 +16,7 @@ export class TransformController {
   private activeNode: BaseNode | null = null;
   private activeHandle: string | null = null;
 
-  constructor(private toolsLayer: Container) {}
+  constructor() {}
 
   startTransform(node: BaseNode, point: Point, handle?: string) {
     this.activeNode = node;
@@ -24,7 +24,7 @@ export class TransformController {
     this.activeHandle = handle ?? null;
 
     // Store initial transform state
-    this.startTransform = {
+    this.startState = {
       x: node.x,
       y: node.y,
       width: node.width,
@@ -43,7 +43,7 @@ export class TransformController {
   }
 
   updateTransform(point: Point) {
-    if (!this.activeNode || !this.startPoint || !this.startTransform) return;
+    if (!this.activeNode || !this.startPoint || !this.startState) return;
 
     const dx = point.x - this.startPoint.x;
     const dy = point.y - this.startPoint.y;
@@ -51,15 +51,15 @@ export class TransformController {
     switch (this.mode) {
       case 'move':
         this.activeNode.position.set(
-          this.startTransform.x + dx,
-          this.startTransform.y + dy
+          this.startState.x + dx,
+          this.startState.y + dy
         );
         break;
 
       case 'rotate':
         const center = new Point(
-          this.startTransform.x + this.activeNode.width / 2,
-          this.startTransform.y + this.activeNode.height / 2
+          this.startState.x + this.activeNode.width / 2,
+          this.startState.y + this.activeNode.height / 2
         );
         
         const startAngle = Math.atan2(
@@ -71,31 +71,30 @@ export class TransformController {
           point.x - center.x
         );
         
-        this.activeNode.rotation = this.startTransform.rotation + (currentAngle - startAngle);
+        this.activeNode.rotation = this.startState.rotation + (currentAngle - startAngle);
         break;
 
       case 'resize':
         if (!this.activeHandle) break;
 
-        const bounds = this.activeNode.getBounds();
-        let newWidth = this.startTransform.width;
-        let newHeight = this.startTransform.height;
-        let newX = this.startTransform.x;
-        let newY = this.startTransform.y;
+        let newWidth = this.startState.width;
+        let newHeight = this.startState.height;
+        let newX = this.startState.x;
+        let newY = this.startState.y;
 
         // Handle resize based on which handle is being dragged
         if (this.activeHandle.includes('right')) {
-          newWidth = this.startTransform.width + dx;
+          newWidth = this.startState.width + dx;
         } else if (this.activeHandle.includes('left')) {
-          newWidth = this.startTransform.width - dx;
-          newX = this.startTransform.x + dx;
+          newWidth = this.startState.width - dx;
+          newX = this.startState.x + dx;
         }
 
         if (this.activeHandle.includes('bottom')) {
-          newHeight = this.startTransform.height + dy;
+          newHeight = this.startState.height + dy;
         } else if (this.activeHandle.includes('top')) {
-          newHeight = this.startTransform.height - dy;
-          newY = this.startTransform.y + dy;
+          newHeight = this.startState.height - dy;
+          newY = this.startState.y + dy;
         }
 
         // Ensure minimum size
@@ -113,7 +112,7 @@ export class TransformController {
   endTransform() {
     this.mode = 'none';
     this.startPoint = null;
-    this.startTransform = null;
+    this.startState = null;
     this.activeNode = null;
     this.activeHandle = null;
   }
