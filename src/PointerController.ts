@@ -48,6 +48,14 @@ export class PointerController {
       this.selectionManager.setMultiSelect(true);
     }
 
+    // Delete selected nodes
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      const removed = this.selectionManager.deleteSelected(this.objectLayer);
+      if (removed.length) {
+        e.preventDefault();
+      }
+    }
+
     // Copy (Ctrl/Cmd + C)
     if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
