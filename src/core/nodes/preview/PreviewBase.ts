@@ -37,6 +37,12 @@ export abstract class PreviewBase {
     this.clear();
   }
 
+  // Expose read-only access to the underlying graphics so external
+  // controllers can draw auxiliary UI (e.g., hover highlights).
+  get graphics() {
+    return this.g;
+  }
+
   protected abstract redraw(start: Point, end: Point): void;
 
   protected getRect() {

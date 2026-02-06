@@ -4,7 +4,15 @@ import type { ShapeCreatedEvent } from './events';
 
 export const version = '0.0.0';
 
-export type ToolName = 'select' | 'rectangle' | 'circle' | 'text' | 'line' | 'ellipse' | 'star' | 'pan';
+export type ToolName =
+  | 'select'
+  | 'rectangle'
+  | 'circle'
+  | 'text'
+  | 'line'
+  | 'ellipse'
+  | 'star'
+  | 'pan';
 
 export const TOOL_CURSOR: Record<ToolName, string | null> = {
   select: null,
@@ -66,13 +74,14 @@ export class CCDApp {
   }
 
   initPointerController() {
-    this.pointerController = new PointerController(this.previewLayer);
-    this.pointerController.setToolChangeHandler((tool) => this.onToolChange(tool));
+    this.pointerController = new PointerController(this.previewLayer, this.objectLayer);
 
     // Listen for shape creation events
     window.addEventListener('shape:created', ((e: ShapeCreatedEvent) => {
       const shape = e.detail.shape;
       this.objectLayer.addChild(shape);
+
+      this.useTool('select');
     }) as EventListener);
 
     this.host?.addEventListener('pointerdown', (e) => {
@@ -89,7 +98,7 @@ export class CCDApp {
       this.pointerController?.onPointerUp(e);
     });
 
-    this.host?.addEventListener('pointercancel', (e) => {
+    this.host?.addEventListener('pointercancel', (_) => {
       this.pointerController?.cancel();
     });
   }
@@ -116,11 +125,11 @@ export class CCDApp {
     this.pointerController?.setTool(toolName);
     const toolCursor = TOOL_CURSOR[toolName];
     this.setCursor(toolCursor);
-  }
 
-  onToolChange(toolName: ToolName) {
-    const toolCursor = TOOL_CURSOR[toolName];
-    this.setCursor(toolCursor);
+    const event = new CustomEvent('tool:changed', {
+      detail: { tool: toolName },
+    });
+    window.dispatchEvent(event);
   }
 
   destroy() {

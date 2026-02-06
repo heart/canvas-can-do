@@ -40,7 +40,6 @@ export class RectangleNode extends BaseNode {
     this.graphics = new Graphics();
     this.addChild(this.graphics);
     this.redraw();
-    this.syncTransform();
   }
 
   protected redraw(): void {
@@ -61,9 +60,9 @@ export class RectangleNode extends BaseNode {
 
     // Apply fill if needed
     if (fill !== undefined) {
-      this.graphics.fill({ 
-        color: fillColor ?? 0xffffff, 
-        alpha: opacity 
+      this.graphics.fill({
+        color: fillColor ?? 0xffffff,
+        alpha: opacity,
       });
     }
 

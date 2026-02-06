@@ -1,0 +1,87 @@
+/* base */
+.ccd-host {
+  cursor: default;
+}
+
+/* tools */
+.ccd-cursor-default {
+  cursor: default;
+}
+
+.ccd-cursor-crosshair {
+  cursor: crosshair;
+}
+
+.ccd-cursor-text {
+  cursor: text;
+}
+
+.ccd-cursor-move {
+  cursor: move;
+}
+
+.ccd-cursor-grab {
+  cursor: grab;
+}
+
+.ccd-cursor-grabbing {
+  cursor: grabbing;
+}
+
+/* resize — edges */
+.ccd-cursor-resize-n {
+  cursor: n-resize;
+}
+
+.ccd-cursor-resize-s {
+  cursor: s-resize;
+}
+
+.ccd-cursor-resize-e {
+  cursor: e-resize;
+}
+
+.ccd-cursor-resize-w {
+  cursor: w-resize;
+}
+
+/* resize — corners */
+.ccd-cursor-resize-nw {
+  cursor: nw-resize;
+}
+
+.ccd-cursor-resize-ne {
+  cursor: ne-resize;
+}
+
+.ccd-cursor-resize-sw {
+  cursor: sw-resize;
+}
+
+.ccd-cursor-resize-se {
+  cursor: se-resize;
+}
+
+/* rotate */
+.ccd-cursor-rotate {
+  cursor: alias; /* placeholder, custom cursor มักใช้แทน */
+}
+
+/* zoom / view */
+.ccd-cursor-zoom-in {
+  cursor: zoom-in;
+}
+
+.ccd-cursor-zoom-out {
+  cursor: zoom-out;
+}
+
+/* disabled / locked */
+.ccd-cursor-not-allowed {
+  cursor: not-allowed;
+}
+
+/* precision */
+.ccd-cursor-precision {
+  cursor: cell;
+}

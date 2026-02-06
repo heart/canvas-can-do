@@ -1,0 +1,1 @@
+aider --model openrouter/anthropic/claude-3.5-sonnet --chat-language english

@@ -1,6 +1,4 @@
 import { Container } from 'pixi.js';
-import type { Vec2 } from '../math/Vec2';
-import { vec2 } from '../math/Vec2';
 
 export type NodeType = 'rectangle' | 'circle' | 'text' | 'line' | 'ellipse' | 'star';
 
@@ -37,7 +35,7 @@ export class BaseNode extends Container {
       fill: '#ffffff',
       stroke: '#000000',
       strokeWidth: 1,
-      opacity: 1
+      opacity: 1,
     };
     this.visible = options.visible ?? true;
     this.locked = options.locked ?? false;
