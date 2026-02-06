@@ -63,10 +63,10 @@ export class RectangleNode extends BaseNode {
 
     // Apply stroke if needed
     if (stroke !== undefined) {
-      this.graphics.stroke({ 
+      this.graphics.stroke({
         width: strokeWidth,
         color: strokeColor ?? 0x000000,
-        alpha: opacity 
+        alpha: opacity,
       });
     }
 
