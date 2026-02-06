@@ -71,7 +71,7 @@ export class RectangleNode extends BaseNode {
     this.graphics.endFill();
   }
 
-  private syncTransform() {
+  protected syncTransform(): void {
     this.position.set(this.transform.x, this.transform.y);
     this.rotation = this.transform.rotation;
     this.scale.set(this.transform.scaleX, this.transform.scaleY);
