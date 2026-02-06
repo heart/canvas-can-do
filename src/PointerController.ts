@@ -1,17 +1,15 @@
 import { PreviewRect } from './core/nodes/preview/PreviewRect';
-import type { CCDApp } from './index';
 import type { ToolName } from './index';
 import type { RectangleNode } from './core/nodes/rectangle';
-import { RectangleObject } from './core/nodes/rectangle/RectangleObject';
+import { Container } from 'pixi.js';
 
 export class PointerController {
-  private app: CCDApp;
   private previewRect: PreviewRect;
   private activeTool: ToolName = 'select';
+  private onToolChange?: (tool: ToolName) => void;
 
-  constructor(app: CCDApp) {
-    this.app = app;
-    this.previewRect = new PreviewRect(app.previewLayer);
+  constructor(previewLayer: Container) {
+    this.previewRect = new PreviewRect(previewLayer);
   }
 
   setTool(tool: ToolName) {
@@ -45,17 +43,23 @@ export class PointerController {
           height: rect.h,
         };
         
-        const rectangleObject = new RectangleObject(rectangleNode);
-        this.app.objectLayer.addChild(rectangleObject);
+        const event = new CustomEvent('shape:created', {
+          detail: { shape: rectangleNode }
+        });
+        window.dispatchEvent(event);
       }
     }
+  }
+
+  setToolChangeHandler(handler: (tool: ToolName) => void) {
+    this.onToolChange = handler;
   }
 
   cancel() {
     this.previewRect.cancel();
     // Reset to select tool when canceling
     this.setTool('select');
-    // Notify app about tool change
-    this.app.onToolChange('select');
+    // Notify about tool change through handler
+    this.onToolChange?.('select');
   }
 }

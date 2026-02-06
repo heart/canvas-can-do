@@ -1,5 +1,7 @@
 import { Application, Container } from 'pixi.js';
 import { PointerController } from './PointerController';
+import type { ShapeCreatedEvent } from './events';
+import { RectangleObject } from './core/nodes/rectangle/RectangleObject';
 
 export const version = '0.0.0';
 
@@ -62,7 +64,17 @@ export class CCDApp {
   }
 
   initPointerController() {
-    this.pointerController = new PointerController(this);
+    this.pointerController = new PointerController(this.previewLayer);
+    this.pointerController.setToolChangeHandler((tool) => this.onToolChange(tool));
+    
+    // Listen for shape creation events
+    window.addEventListener('shape:created', ((e: ShapeCreatedEvent) => {
+      const shape = e.detail.shape;
+      if (shape.type === 'rectangle') {
+        const rectangleObject = new RectangleObject(shape);
+        this.objectLayer.addChild(rectangleObject);
+      }
+    }) as EventListener);
 
     this.host?.addEventListener('pointerdown', (e) => {
       //this.host.setPointerCapture(e.pointerId);
