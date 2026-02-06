@@ -1,8 +1,136 @@
-import type { BaseNode } from './BaseNode';
+import { Container, Graphics } from 'pixi.js';
+import { Transform2D } from '../math/Transform2D';
+import type { Style } from './BaseNode';
+import type { Vec2 } from '../math/Vec2';
 
-export interface RectangleNode extends BaseNode {
-  type: 'rectangle';
+export class RectangleNode extends Container {
+  readonly type = 'rectangle' as const;
+  readonly id: string;
+  
   width: number;
   height: number;
   cornerRadius?: number;
+  
+  transform: Transform2D;
+  style: Style;
+  
+  visible: boolean;
+  locked: boolean;
+
+  private graphics: Graphics;
+
+  constructor(options: {
+    id?: string;
+    width: number;
+    height: number;
+    cornerRadius?: number;
+    transform?: Transform2D;
+    style?: Style;
+    visible?: boolean;
+    locked?: boolean;
+  }) {
+    super();
+    
+    this.id = options.id ?? crypto.randomUUID();
+    this.width = options.width;
+    this.height = options.height;
+    this.cornerRadius = options.cornerRadius;
+    this.transform = options.transform ?? new Transform2D();
+    this.style = options.style ?? {
+      fill: '#ffffff',
+      stroke: '#000000',
+      strokeWidth: 1,
+      opacity: 1
+    };
+    this.visible = options.visible ?? true;
+    this.locked = options.locked ?? false;
+
+    // Setup graphics
+    this.graphics = new Graphics();
+    this.addChild(this.graphics);
+    this.redraw();
+    this.syncTransform();
+  }
+
+  private redraw() {
+    const { fill, stroke, strokeWidth = 1, opacity = 1 } = this.style;
+
+    this.graphics.clear();
+
+    // Convert hex color strings to numbers if needed
+    const fillColor = typeof fill === 'string' ? parseInt(fill.replace('#', ''), 16) : fill;
+    const strokeColor = typeof stroke === 'string' ? parseInt(stroke.replace('#', ''), 16) : stroke;
+
+    // Fill
+    if (fill) {
+      this.graphics.beginFill(fillColor, opacity);
+    }
+
+    // Stroke
+    if (stroke) {
+      this.graphics.lineStyle({
+        width: strokeWidth,
+        color: strokeColor,
+        alpha: opacity
+      });
+    }
+
+    // Draw rectangle
+    if (this.cornerRadius) {
+      this.graphics.drawRoundedRect(0, 0, this.width, this.height, this.cornerRadius);
+    } else {
+      this.graphics.drawRect(0, 0, this.width, this.height);
+    }
+    
+    this.graphics.endFill();
+  }
+
+  private syncTransform() {
+    this.position.set(this.transform.x, this.transform.y);
+    this.rotation = this.transform.rotation;
+    this.scale.set(this.transform.scaleX, this.transform.scaleY);
+  }
+
+  updateTransform() {
+    this.syncTransform();
+    super.updateTransform();
+  }
+
+  // Transform convenience methods
+  setPosition(x: number, y: number): this {
+    this.transform.setPosition(x, y);
+    return this;
+  }
+
+  setScale(sx: number, sy = sx): this {
+    this.transform.setScale(sx, sy);
+    return this;
+  }
+
+  setRotation(rad: number): this {
+    this.transform.setRotation(rad);
+    return this;
+  }
+
+  translate(x: number, y: number): this {
+    this.transform.translate(x, y);
+    return this;
+  }
+
+  rotate(rad: number): this {
+    this.transform.rotate(rad);
+    return this;
+  }
+
+  scale(sx: number, sy = sx): this {
+    this.transform.scale(sx, sy);
+    return this;
+  }
+
+  // Style methods
+  setStyle(style: Partial<Style>): this {
+    this.style = { ...this.style, ...style };
+    this.redraw();
+    return this;
+  }
 }
