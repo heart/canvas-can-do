@@ -74,7 +74,28 @@ export class PointerController {
   onPointerMove(e: PointerEvent) {
     const point = { x: e.offsetX, y: e.offsetY };
 
-    if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
+    if (this.activeTool === 'select') {
+      // Hit test against objects
+      const hitObject = this.previewLayer.parent?.children
+        .find(child => child !== this.previewLayer && 'containsPoint' in child && 
+          (child as Container).containsPoint?.(point));
+
+      if (hitObject) {
+        const bounds = hitObject.getBounds();
+        
+        // Draw highlight rectangle
+        this.preview.g.clear();
+        this.preview.g.rect(bounds.x, bounds.y, bounds.width, bounds.height);
+        this.preview.g.stroke({ color: 0x0be666, alpha: 0.8, width: 1 });
+        
+        if (!this.preview.g.parent) {
+          this.previewLayer.addChild(this.preview.g);
+        }
+      } else {
+        // Clear highlight if not hovering over object
+        this.preview.g.clear();
+      }
+    } else if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
       this.preview.update(point);
     }
   }
