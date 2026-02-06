@@ -54,9 +54,11 @@ export class RectangleNode extends BaseNode {
 
     // Stroke
     if (stroke !== undefined) {
-      this.graphics.stroke.width = strokeWidth;
-      this.graphics.stroke.color = strokeColor ?? 0x000000;
-      this.graphics.stroke.alpha = opacity;
+      this.graphics.lineStyle({
+        width: strokeWidth,
+        color: strokeColor ?? 0x000000,
+        alpha: opacity
+      });
     }
 
     // Draw rectangle
