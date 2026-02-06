@@ -27,8 +27,8 @@ export class SelectionManager {
     if (!selectedNode) return;
 
     if (selectedNode.type === 'line') {
-      if (handle === 'start' || handle === 'end') {
-        this.lineTransformController.startTransform(selectedNode as LineNode, point, handle);
+      if (handle === 'start' || handle === 'end' || handle === 'move') {
+        this.lineTransformController.startTransform(selectedNode as LineNode, point, handle as 'start' | 'end' | 'move');
       }
     } else {
       this.transformController.startTransform(selectedNode, point, handle);
@@ -67,6 +67,7 @@ export class SelectionManager {
     if (node.type === 'line') {
       const lineNode = node as LineNode;
       const handleSize = 12;
+      const hitTolerance = 10;
 
       // Check start point handle
       const startX = lineNode.x + lineNode.startX;
@@ -89,7 +90,14 @@ export class SelectionManager {
           (endY - startY) * point.x - (endX - startX) * point.y + endX * startY - endY * startX
         ) / lineLength;
 
-      if (distance < handleSize) {
+      if (distance < hitTolerance) {
+        return 'move';
+      }
+
+      // Check center grip rectangle
+      const midX = (startX + endX) / 2;
+      const midY = (startY + endY) / 2;
+      if (Math.abs(point.x - midX) < handleSize && Math.abs(point.y - midY) < handleSize) {
         return 'move';
       }
     } else {
@@ -176,20 +184,22 @@ export class SelectionManager {
 
     // Preserve original z-order
     const sorted = nodes
-      .map(n => ({ n, idx: parent.getChildIndex(n) }))
+      .map((n) => ({ n, idx: parent.getChildIndex(n) }))
       .sort((a, b) => a.idx - b.idx)
-      .map(e => e.n);
-    const insertIndex = sorted.length ? Math.min(...sorted.map(n => parent.getChildIndex(n))) : parent.children.length;
+      .map((e) => e.n);
+    const insertIndex = sorted.length
+      ? Math.min(...sorted.map((n) => parent.getChildIndex(n)))
+      : parent.children.length;
     const bounds = this.getSelectionBounds();
 
     // Create group at top-left of bounds and re-parent children with local coords
     const group = new GroupNode({
       children: [],
       x: bounds.x,
-      y: bounds.y
+      y: bounds.y,
     });
 
-    sorted.forEach(node => {
+    sorted.forEach((node) => {
       // Adjust to group's local space
       node.position.set(node.position.x - bounds.x, node.position.y - bounds.y);
       parent.removeChild(node);
@@ -205,7 +215,7 @@ export class SelectionManager {
 
     // Dispatch layer hierarchy changed event
     const event = new CustomEvent('layer:changed', {
-      detail: { hierarchy: LayerHierarchy.getHierarchy(parent) }
+      detail: { hierarchy: LayerHierarchy.getHierarchy(parent) },
     });
     window.dispatchEvent(event);
 
@@ -225,7 +235,7 @@ export class SelectionManager {
 
     // Move children to world (parent) space
     const children = [...node.children] as BaseNode[];
-    children.forEach(child => {
+    children.forEach((child) => {
       const worldPos = node.toGlobal(child.position);
       // Bake group transform into child
       child.position.copyFrom(worldPos);
@@ -246,13 +256,13 @@ export class SelectionManager {
 
     // Replace selection with the children
     this.selectedNodes.clear();
-    children.forEach(c => this.selectedNodes.add(c));
+    children.forEach((c) => this.selectedNodes.add(c));
     this.updateSelectionVisuals();
 
     // Dispatch layer hierarchy changed event
     if (parent) {
       const event = new CustomEvent('layer:changed', {
-        detail: { hierarchy: LayerHierarchy.getHierarchy(parent) }
+        detail: { hierarchy: LayerHierarchy.getHierarchy(parent) },
       });
       window.dispatchEvent(event);
     }
@@ -266,7 +276,7 @@ export class SelectionManager {
     let maxX = -Infinity;
     let maxY = -Infinity;
 
-    this.selectedNodes.forEach(node => {
+    this.selectedNodes.forEach((node) => {
       const bounds = node.getBounds();
       minX = Math.min(minX, bounds.x);
       minY = Math.min(minY, bounds.y);
@@ -278,7 +288,7 @@ export class SelectionManager {
       x: minX,
       y: minY,
       width: maxX - minX,
-      height: maxY - minY
+      height: maxY - minY,
     };
   }
 
@@ -316,7 +326,7 @@ export class SelectionManager {
 
   deleteSelected(container: Container): BaseNode[] {
     const removed: BaseNode[] = [];
-    this.selectedNodes.forEach(node => {
+    this.selectedNodes.forEach((node) => {
       if (node.parent === container) {
         container.removeChild(node);
         removed.push(node);
@@ -335,7 +345,7 @@ export class SelectionManager {
 
   nudgeSelected(dx: number, dy: number): boolean {
     if (this.selectedNodes.size === 0) return false;
-    this.selectedNodes.forEach(node => {
+    this.selectedNodes.forEach((node) => {
       node.position.x += dx;
       node.position.y += dy;
     });
@@ -405,6 +415,13 @@ export class SelectionManager {
           this.selectionGraphics.fill({ color: 0xffffff });
           this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 0.9 });
         }
+
+        // Center grip for moving the line
+        const midX = (lineNode.x + lineNode.startX + lineNode.x + lineNode.endX) / 2;
+        const midY = (lineNode.y + lineNode.startY + lineNode.y + lineNode.endY) / 2;
+        this.selectionGraphics.rect(midX - 6, midY - 6, 12, 12);
+        this.selectionGraphics.fill({ color: 0xffffff });
+        this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 0.9 });
       } else {
         // Draw selection rectangle
         this.selectionGraphics.rect(-width / 2, -height / 2, width, height);

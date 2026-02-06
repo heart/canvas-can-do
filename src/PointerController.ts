@@ -84,7 +84,7 @@ export class PointerController {
       e.preventDefault();
       const pasted: BaseNode[] = [];
       const offset = 12;
-      this.clipboard.forEach(node => {
+      this.clipboard.forEach((node) => {
         const clone = this.cloneNode(node, offset, offset);
         if (clone) {
           this.objectLayer.addChild(clone);
@@ -94,7 +94,7 @@ export class PointerController {
 
       if (pasted.length) {
         this.selectionManager.setMultiSelect(true);
-        pasted.forEach(node => this.selectionManager.select(node));
+        pasted.forEach((node) => this.selectionManager.select(node));
         this.selectionManager.setMultiSelect(false);
       }
     }
@@ -117,7 +117,7 @@ export class PointerController {
       e.preventDefault();
       const ungrouped = this.selectionManager.ungroupSelected();
       // Re-add ungrouped children to object layer
-      ungrouped.forEach(child => {
+      ungrouped.forEach((child) => {
         if (!this.objectLayer.children.includes(child)) {
           this.objectLayer.addChild(child);
         }
@@ -134,7 +134,11 @@ export class PointerController {
     }
 
     // Nudge with Arrow keys (no Ctrl/Cmd): move selection
-    if (!e.ctrlKey && !e.metaKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    if (
+      !e.ctrlKey &&
+      !e.metaKey &&
+      ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)
+    ) {
       e.preventDefault();
       const delta = e.shiftKey ? 1 : 10;
       const dx = e.key === 'ArrowLeft' ? -delta : e.key === 'ArrowRight' ? delta : 0;
@@ -216,14 +220,12 @@ export class PointerController {
       }
 
       // If no handle hit, check for object selection
-      const hitObject = [...(this.objectLayer?.children || [])]
-        .reverse()
-        .find((child) => {
-          if (child === this.objectLayer) return false;
-          const bounds = child.getBounds();
-          // bounds are global; use global point
-          return bounds.containsPoint(globalPoint.x, globalPoint.y);
-        });
+      const hitObject = [...(this.objectLayer?.children || [])].reverse().find((child) => {
+        if (child === this.objectLayer) return false;
+        const bounds = child.getBounds();
+        // bounds are global; use global point
+        return bounds.containsPoint(globalPoint.x, globalPoint.y);
+      });
 
       this.selectionManager.select((hitObject as BaseNode) || null);
       if (hitObject) {
@@ -259,13 +261,11 @@ export class PointerController {
       this.selectionManager.updateTransform(point);
 
       // Otherwise show hover state - search from top to bottom of z-order
-      const hitObject = [...(this.objectLayer?.children || [])]
-        .reverse()
-        .find((child) => {
-          if (child === this.objectLayer) return false;
-          const bounds = child.getBounds();
-          return bounds.containsPoint(globalPoint.x, globalPoint.y);
-        });
+      const hitObject = [...(this.objectLayer?.children || [])].reverse().find((child) => {
+        if (child === this.objectLayer) return false;
+        const bounds = child.getBounds();
+        return bounds.containsPoint(globalPoint.x, globalPoint.y);
+      });
 
       if (hitObject) {
         const bounds = hitObject.getBounds();
