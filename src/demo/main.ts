@@ -1,6 +1,7 @@
 import './style.css';
 import { CCDApp } from '..';
 import type { ToolName } from '..';
+import type { LayerNode } from '../core/layers/LayerHierarchy';
 
 const tools: ToolName[] = ['select', 'rectangle', 'ellipse', 'line', 'star', 'text', 'pan'];
 
@@ -17,6 +18,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       .join('')}
   </div>
   <div id="editor"></div>
+  <div id="layer"></div>
 `;
 
 const app = new CCDApp();
@@ -33,6 +35,13 @@ function updateActiveToolButton(tool: ToolName) {
   btn?.classList.add('active');
 }
 
+function updateLayer(node: LayerNode) {
+  const layer = document.getElementById(`layer`);
+  if (layer) {
+    layer.innerHTML = JSON.stringify(node, null, 2);
+  }
+}
+
 // Add click handlers for all tool buttons
 tools.forEach((tool) => {
   const btn = document.getElementById(`${tool}-btn`);
@@ -45,6 +54,11 @@ tools.forEach((tool) => {
 // Listen for tool changes from the app
 window.addEventListener('tool:changed', ((e: CustomEvent<{ tool: ToolName }>) => {
   updateActiveToolButton(e.detail.tool);
+}) as EventListener);
+
+// Listen for tool changes from the app
+window.addEventListener('layer:changed', ((e: CustomEvent<{ hierarchy: LayerNode }>) => {
+  updateLayer(e.detail.hierarchy);
 }) as EventListener);
 
 // Start with select tool active

@@ -299,6 +299,21 @@ export class SelectionManager {
     return Array.from(this.selectedNodes);
   }
 
+  reorderSelected(container: Container, direction: -1 | 1): boolean {
+    if (this.selectedNodes.size !== 1) return false;
+    const node = Array.from(this.selectedNodes)[0];
+    if (node.parent !== container) return false;
+
+    const currentIndex = container.getChildIndex(node);
+    let newIndex = currentIndex + direction;
+    newIndex = Math.max(0, Math.min(container.children.length - 1, newIndex));
+    if (newIndex === currentIndex) return false;
+
+    container.setChildIndex(node, newIndex);
+    this.dispatchLayerChanged();
+    return true;
+  }
+
   deleteSelected(container: Container): BaseNode[] {
     const removed: BaseNode[] = [];
     this.selectedNodes.forEach(node => {
@@ -316,6 +331,17 @@ export class SelectionManager {
     this.selectedNodes.clear();
     this.updateSelectionVisuals();
     this.dispatchLayerChanged();
+  }
+
+  nudgeSelected(dx: number, dy: number): boolean {
+    if (this.selectedNodes.size === 0) return false;
+    this.selectedNodes.forEach(node => {
+      node.position.x += dx;
+      node.position.y += dy;
+    });
+    this.updateSelectionVisuals();
+    this.dispatchLayerChanged();
+    return true;
   }
 
   private updateSelectionVisuals() {

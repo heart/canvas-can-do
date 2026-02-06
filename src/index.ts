@@ -149,4 +149,8 @@ export class CCDApp {
   destroy() {
     this.app.destroy(true);
   }
+
+  getLayerHierarchy() {
+    return LayerHierarchy.getHierarchy(this.objectLayer);
+  }
 }

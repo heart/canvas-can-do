@@ -114,6 +114,24 @@ export class PointerController {
       });
       if (ungrouped.length) this.onLayerChanged();
     }
+
+    // Reorder shortcuts: Ctrl/Cmd + ArrowUp/ArrowDown
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      const direction = e.key === 'ArrowUp' ? 1 : -1; // swap: Up moves forward, Down moves backward
+      const moved = this.selectionManager.reorderSelected(this.objectLayer, direction);
+      if (moved) this.onLayerChanged();
+    }
+
+    // Nudge with Arrow keys (no Ctrl/Cmd): move selection
+    if (!e.ctrlKey && !e.metaKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      e.preventDefault();
+      const delta = e.shiftKey ? 1 : 10;
+      const dx = e.key === 'ArrowLeft' ? -delta : e.key === 'ArrowRight' ? delta : 0;
+      const dy = e.key === 'ArrowUp' ? -delta : e.key === 'ArrowDown' ? delta : 0;
+      const moved = this.selectionManager.nudgeSelected(dx, dy);
+      if (moved) this.onLayerChanged();
+    }
   }
 
   private cloneNode(node: BaseNode, dx = 0, dy = 0): BaseNode | null {
