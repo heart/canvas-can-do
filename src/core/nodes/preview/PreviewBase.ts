@@ -7,8 +7,11 @@ export abstract class PreviewBase {
   protected active = false;
   protected start: Point = { x: 0, y: 0 };
   protected last: Point = { x: 0, y: 0 };
+  protected previewLayer: Container;
 
-  constructor(protected previewLayer: Container) {}
+  constructor(previewLayer: Container) {
+    this.previewLayer = previewLayer;
+  }
 
   begin(start: Point): void {
     this.active = true;

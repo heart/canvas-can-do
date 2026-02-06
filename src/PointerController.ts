@@ -1,4 +1,10 @@
 import { PreviewRect } from './core/nodes/preview/PreviewRect';
+import { PreviewCircle } from './core/nodes/preview/PreviewCircle';
+import { PreviewEllipse } from './core/nodes/preview/PreviewEllipse';
+import { PreviewLine } from './core/nodes/preview/PreviewLine';
+import { PreviewStar } from './core/nodes/preview/PreviewStar';
+import { PreviewBase } from './core/nodes/preview/PreviewBase';
+
 import type { ToolName } from './index';
 import { Container } from 'pixi.js';
 import { RectangleNode } from './core/nodes/RectangleNode';
@@ -12,14 +18,16 @@ export class PointerController {
   private preview: PreviewBase;
   private activeTool: ToolName = 'select';
   private onToolChange?: (tool: ToolName) => void;
+  private previewLayer: Container;
 
-  constructor(private previewLayer: Container) {
+  constructor(previewLayer: Container) {
+    this.previewLayer = previewLayer;
     this.preview = new PreviewRect(previewLayer);
   }
 
   setTool(tool: ToolName) {
     this.activeTool = tool;
-    
+
     // Update preview based on tool
     switch (tool) {
       case 'rectangle':
@@ -42,7 +50,7 @@ export class PointerController {
 
   onPointerDown(e: PointerEvent) {
     const point = { x: e.offsetX, y: e.offsetY };
-    
+
     if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
       this.preview.begin(point);
     }
@@ -50,7 +58,7 @@ export class PointerController {
 
   onPointerMove(e: PointerEvent) {
     const point = { x: e.offsetX, y: e.offsetY };
-    
+
     if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
       this.preview.update(point);
     }
@@ -65,7 +73,7 @@ export class PointerController {
       fill: '#ffffff',
       stroke: '#000000',
       strokeWidth: 1,
-      opacity: 1
+      opacity: 1,
     };
 
     switch (this.activeTool) {
@@ -75,7 +83,7 @@ export class PointerController {
           height: rect.h,
           x: rect.x,
           y: rect.y,
-          style: defaultStyle
+          style: defaultStyle,
         });
         break;
 
@@ -85,7 +93,7 @@ export class PointerController {
           radius,
           x: rect.x + rect.w / 2,
           y: rect.y + rect.h / 2,
-          style: defaultStyle
+          style: defaultStyle,
         });
         break;
 
@@ -95,7 +103,7 @@ export class PointerController {
           height: rect.h,
           x: rect.x + rect.w / 2,
           y: rect.y + rect.h / 2,
-          style: defaultStyle
+          style: defaultStyle,
         });
         break;
 
@@ -105,7 +113,7 @@ export class PointerController {
           startY: rect.y,
           endX: rect.x + rect.w,
           endY: rect.y + rect.h,
-          style: defaultStyle
+          style: defaultStyle,
         });
         break;
 
@@ -117,7 +125,7 @@ export class PointerController {
           outerRadius: size * 0.8,
           x: rect.x + rect.w / 2,
           y: rect.y + rect.h / 2,
-          style: defaultStyle
+          style: defaultStyle,
         });
         break;
 
@@ -126,7 +134,7 @@ export class PointerController {
           text: 'Double click to edit',
           x: rect.x,
           y: rect.y,
-          style: defaultStyle
+          style: defaultStyle,
         });
         break;
     }
