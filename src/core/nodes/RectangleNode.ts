@@ -6,15 +6,10 @@ import type { Vec2 } from '../math/Vec2';
 export class RectangleNode extends Container {
   readonly type = 'rectangle' as const;
   readonly id: string;
-  
-  width: number;
-  height: number;
+
   cornerRadius?: number;
-  
   transform: Transform2D;
   style: Style;
-  
-  visible: boolean;
   locked: boolean;
 
   private graphics: Graphics;
@@ -30,7 +25,7 @@ export class RectangleNode extends Container {
     locked?: boolean;
   }) {
     super();
-    
+
     this.id = options.id ?? crypto.randomUUID();
     this.width = options.width;
     this.height = options.height;
@@ -40,7 +35,7 @@ export class RectangleNode extends Container {
       fill: '#ffffff',
       stroke: '#000000',
       strokeWidth: 1,
-      opacity: 1
+      opacity: 1,
     };
     this.visible = options.visible ?? true;
     this.locked = options.locked ?? false;
@@ -71,7 +66,7 @@ export class RectangleNode extends Container {
       this.graphics.lineStyle({
         width: strokeWidth,
         color: strokeColor,
-        alpha: opacity
+        alpha: opacity,
       });
     }
 
@@ -81,7 +76,7 @@ export class RectangleNode extends Container {
     } else {
       this.graphics.drawRect(0, 0, this.width, this.height);
     }
-    
+
     this.graphics.endFill();
   }
 
