@@ -36,14 +36,18 @@ export class LineNode extends BaseNode {
       locked: options.locked,
     });
 
-    this.startX = options.startX;
-    this.startY = options.startY;
-    this.endX = options.endX;
-    this.endY = options.endY;
+    // Store original coordinates relative to node position
+    this.startX = 0;
+    this.startY = 0;
+    this.endX = options.endX - options.startX;
+    this.endY = options.endY - options.startY;
 
-    // Calculate width and height
-    this._width = Math.abs(this.endX - this.startX);
-    this._height = Math.abs(this.endY - this.startY);
+    // Set node position to start point
+    this.position.set(options.startX, options.startY);
+
+    // Calculate width and height based on line extent
+    this._width = Math.abs(this.endX);
+    this._height = Math.abs(this.endY);
 
     // Setup graphics
     this.graphics = new Graphics();

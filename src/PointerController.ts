@@ -109,10 +109,10 @@ export class PointerController {
 
       case 'line':
         shape = new LineNode({
-          startX: rect.x,
-          startY: rect.y,
-          endX: rect.x + rect.w,
-          endY: rect.y + rect.h,
+          startX: this.preview.start.x,
+          startY: this.preview.start.y,
+          endX: this.last.x,
+          endY: this.last.y,
           style: defaultStyle,
         });
         break;

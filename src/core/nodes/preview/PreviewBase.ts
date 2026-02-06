@@ -5,8 +5,8 @@ type Point = { x: number; y: number };
 export abstract class PreviewBase {
   protected g = new Graphics();
   protected active = false;
-  protected start: Point = { x: 0, y: 0 };
-  protected last: Point = { x: 0, y: 0 };
+  start: Point = { x: 0, y: 0 };
+  last: Point = { x: 0, y: 0 };
   protected previewLayer: Container;
 
   constructor(previewLayer: Container) {
