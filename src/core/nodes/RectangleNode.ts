@@ -47,28 +47,32 @@ export class RectangleNode extends BaseNode {
     const fillColor = typeof fill === 'string' ? parseInt(fill.replace('#', ''), 16) : fill;
     const strokeColor = typeof stroke === 'string' ? parseInt(stroke.replace('#', ''), 16) : stroke;
 
+    this.graphics.clear();
+
     // Fill
     if (fill !== undefined) {
       this.graphics.beginFill({ color: fillColor ?? 0xffffff, alpha: opacity });
     }
 
-    // Stroke
+    // Draw rectangle with stroke
+    if (this.cornerRadius) {
+      this.graphics.roundRect(0, 0, this.width, this.height, this.cornerRadius);
+    } else {
+      this.graphics.rect(0, 0, this.width, this.height);
+    }
+
+    // Apply stroke if needed
     if (stroke !== undefined) {
-      this.graphics.lineStyle({
+      this.graphics.stroke({ 
         width: strokeWidth,
         color: strokeColor ?? 0x000000,
-        alpha: opacity,
+        alpha: opacity 
       });
     }
 
-    // Draw rectangle
-    if (this.cornerRadius) {
-      this.graphics.drawRoundedRect(0, 0, this.width, this.height, this.cornerRadius);
-    } else {
-      this.graphics.drawRect(0, 0, this.width, this.height);
+    if (fill !== undefined) {
+      this.graphics.fill();
     }
-
-    this.graphics.endFill();
   }
 
   protected syncTransform(): void {
