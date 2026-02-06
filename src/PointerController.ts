@@ -81,6 +81,15 @@ export class PointerController {
     const point = { x: e.offsetX, y: e.offsetY };
 
     if (this.activeTool === 'select') {
+      // Check if we hit a transform handle first
+      const handle = this.selectionManager.hitTestHandle(point);
+      
+      if (handle) {
+        this.selectionManager.startTransform(point, handle);
+        return;
+      }
+
+      // If no handle hit, check for object selection
       const hitObject = this.objectLayer?.children.find((child) => {
         if (child === this.objectLayer) return false;
         const bounds = child.getBounds();
@@ -97,7 +106,10 @@ export class PointerController {
     const point = { x: e.offsetX, y: e.offsetY };
 
     if (this.activeTool === 'select') {
-      // Hit test against objects
+      // Update transform if in progress
+      this.selectionManager.updateTransform(point);
+
+      // Otherwise show hover state
       const hitObject = this.objectLayer?.children.find((child) => {
         if (child === this.objectLayer) return false;
         const bounds = child.getBounds();
@@ -106,8 +118,6 @@ export class PointerController {
 
       if (hitObject) {
         const bounds = hitObject.getBounds();
-
-        // Draw highlight rectangle
         this.preview.graphics.clear();
         this.preview.graphics.rect(bounds.x, bounds.y, bounds.width, bounds.height);
         this.preview.graphics.stroke({ color: 0x0be666, alpha: 0.8, width: 1 });
@@ -116,7 +126,6 @@ export class PointerController {
           this.previewLayer.addChild(this.preview.graphics);
         }
       } else {
-        // Clear highlight if not hovering over object
         this.preview.graphics.clear();
       }
     } else if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
@@ -125,6 +134,9 @@ export class PointerController {
   }
 
   onPointerUp(e: PointerEvent) {
+    if (this.activeTool === 'select') {
+      this.selectionManager.endTransform();
+    }
     const rect = this.preview.end();
     if (!rect) return;
 
