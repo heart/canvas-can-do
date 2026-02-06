@@ -44,6 +44,22 @@ export class PointerController {
       if ('setShiftKey' in this.preview) {
         (this.preview as any).setShiftKey(true);
       }
+      this.selectionManager.setMultiSelect(true);
+    }
+
+    // Group shortcut (Ctrl+G or Cmd+G)
+    if (e.key === 'g' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      const group = this.selectionManager.createGroup();
+      if (group) {
+        // Remove selected nodes and add group to object layer
+        Array.from(this.selectionManager.getSelectedNodes())
+          .filter(node => node !== group)
+          .forEach(node => {
+            this.objectLayer.removeChild(node);
+          });
+        this.objectLayer.addChild(group);
+      }
     }
   }
 
@@ -52,6 +68,7 @@ export class PointerController {
       if ('setShiftKey' in this.preview) {
         (this.preview as any).setShiftKey(false);
       }
+      this.selectionManager.setMultiSelect(false);
     }
   }
 

@@ -6,6 +6,7 @@ import type { LineNode } from '../nodes/LineNode';
 
 export class SelectionManager {
   private selectedNodes: Set<BaseNode> = new Set();
+  private isMultiSelect = false;
   private selectionGraphics: Graphics;
   private transformController: TransformController;
   private lineTransformController: LineTransformController;
@@ -137,12 +138,67 @@ export class SelectionManager {
     return null;
   }
 
+  setMultiSelect(enabled: boolean) {
+    this.isMultiSelect = enabled;
+  }
+
   select(node: BaseNode | null) {
-    this.selectedNodes.clear();
+    if (!this.isMultiSelect) {
+      this.selectedNodes.clear();
+    }
+    
     if (node) {
-      this.selectedNodes.add(node);
+      if (this.isMultiSelect && this.selectedNodes.has(node)) {
+        // If multiselect and already selected, deselect it
+        this.selectedNodes.delete(node);
+      } else {
+        this.selectedNodes.add(node);
+      }
     }
     this.updateSelectionVisuals();
+  }
+
+  createGroup() {
+    if (this.selectedNodes.size < 2) return;
+
+    const nodes = Array.from(this.selectedNodes);
+    const bounds = this.getSelectionBounds();
+
+    // Create group at the center of selected objects
+    const group = new GroupNode({
+      children: nodes,
+      x: bounds.x,
+      y: bounds.y
+    });
+
+    // Clear selection and select the new group
+    this.selectedNodes.clear();
+    this.selectedNodes.add(group);
+    this.updateSelectionVisuals();
+
+    return group;
+  }
+
+  private getSelectionBounds() {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    this.selectedNodes.forEach(node => {
+      const bounds = node.getBounds();
+      minX = Math.min(minX, bounds.x);
+      minY = Math.min(minY, bounds.y);
+      maxX = Math.max(maxX, bounds.x + bounds.width);
+      maxY = Math.max(maxY, bounds.y + bounds.height);
+    });
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY
+    };
   }
 
   isSelected(node: BaseNode): boolean {

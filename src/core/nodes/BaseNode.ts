@@ -1,6 +1,6 @@
 import { Container } from 'pixi.js';
 
-export type NodeType = 'rectangle' | 'circle' | 'text' | 'line' | 'ellipse' | 'star';
+export type NodeType = 'rectangle' | 'circle' | 'text' | 'line' | 'ellipse' | 'star' | 'group';
 
 export interface Style {
   fill?: string;
