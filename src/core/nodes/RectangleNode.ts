@@ -24,7 +24,7 @@ export class RectangleNode extends BaseNode {
       transform: options.transform,
       style: options.style,
       visible: options.visible,
-      locked: options.locked
+      locked: options.locked,
     });
 
     this._width = options.width;
@@ -49,7 +49,7 @@ export class RectangleNode extends BaseNode {
 
     // Fill
     if (fill !== undefined) {
-      this.graphics.beginFill({ color: fillColor ?? 0xFFFFFF, alpha: opacity });
+      this.graphics.beginFill({ color: fillColor ?? 0xffffff, alpha: opacity });
     }
 
     // Stroke
@@ -57,7 +57,7 @@ export class RectangleNode extends BaseNode {
       this.graphics.lineStyle({
         width: strokeWidth,
         color: strokeColor ?? 0x000000,
-        alpha: opacity
+        alpha: opacity,
       });
     }
 
