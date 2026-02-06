@@ -125,11 +125,28 @@ export class PointerController {
         break;
 
       case 'line':
+        let endX = this.preview.last.x;
+        let endY = this.preview.last.y;
+
+        // Check if shift is pressed to constrain the line
+        if (e.shiftKey) {
+          const dx = Math.abs(this.preview.last.x - this.preview.start.x);
+          const dy = Math.abs(this.preview.last.y - this.preview.start.y);
+          
+          if (dx > dy) {
+            // Make horizontal
+            endY = this.preview.start.y;
+          } else {
+            // Make vertical
+            endX = this.preview.start.x;
+          }
+        }
+
         shape = new LineNode({
           startX: this.preview.start.x,
           startY: this.preview.start.y,
-          endX: this.preview.last.x,
-          endY: this.preview.last.y,
+          endX: endX,
+          endY: endY,
           style: defaultStyle,
         });
         break;
