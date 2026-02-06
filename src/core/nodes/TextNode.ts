@@ -65,4 +65,17 @@ export class TextNode extends BaseNode {
     }
     return this;
   }
+
+  clone(offsetX = 0, offsetY = 0): TextNode {
+    return new TextNode({
+      text: this.text,
+      x: this.position.x + offsetX,
+      y: this.position.y + offsetY,
+      rotation: this.rotation,
+      scale: { x: this.scale.x, y: this.scale.y },
+      style: { ...this.style },
+      visible: this.visible,
+      locked: this.locked,
+    });
+  }
 }

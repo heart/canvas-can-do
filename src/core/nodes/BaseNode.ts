@@ -117,4 +117,10 @@ export class BaseNode extends Container {
     this.pivot.set(0, 0);
     return this;
   }
+
+  // Override in subclasses to return a deep clone; offset is applied to position
+  // Default implementation throws to surface missing overrides.
+  clone(_offsetX = 0, _offsetY = 0): BaseNode {
+    throw new Error(`clone() not implemented for ${this.type}`);
+  }
 }

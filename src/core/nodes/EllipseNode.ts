@@ -48,8 +48,8 @@ export class EllipseNode extends BaseNode {
     const fillColor = typeof fill === 'string' ? parseInt(fill.replace('#', ''), 16) : fill;
     const strokeColor = typeof stroke === 'string' ? parseInt(stroke.replace('#', ''), 16) : stroke;
 
-    // Draw ellipse
-    this.graphics.ellipse(0, 0, this.width / 2, this.height / 2);
+    // Draw ellipse anchored at top-left; center is (width/2, height/2)
+    this.graphics.ellipse(this.width / 2, this.height / 2, this.width / 2, this.height / 2);
 
     // Apply fill if needed
     if (fill !== undefined) {
@@ -73,5 +73,19 @@ export class EllipseNode extends BaseNode {
     this.style = { ...this.style, ...style };
     this.redraw();
     return this;
+  }
+
+  clone(offsetX = 0, offsetY = 0): EllipseNode {
+    return new EllipseNode({
+      width: this.width,
+      height: this.height,
+      x: this.position.x + offsetX,
+      y: this.position.y + offsetY,
+      rotation: this.rotation,
+      scale: { x: this.scale.x, y: this.scale.y },
+      style: { ...this.style },
+      visible: this.visible,
+      locked: this.locked,
+    });
   }
 }

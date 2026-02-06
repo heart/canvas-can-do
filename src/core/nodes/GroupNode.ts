@@ -1,4 +1,3 @@
-import { Container } from 'pixi.js';
 import { BaseNode } from './BaseNode';
 import type { Style } from './BaseNode';
 
@@ -46,5 +45,22 @@ export class GroupNode extends BaseNode {
 
   get height(): number {
     return this.getBounds().height;
+  }
+
+  clone(offsetX = 0, offsetY = 0): GroupNode {
+    const clonedChildren = this.children
+      .filter((c): c is BaseNode => c instanceof BaseNode)
+      .map(child => child.clone(0, 0));
+
+    return new GroupNode({
+      children: clonedChildren,
+      x: this.position.x + offsetX,
+      y: this.position.y + offsetY,
+      rotation: this.rotation,
+      scale: { x: this.scale.x, y: this.scale.y },
+      style: { ...this.style },
+      visible: this.visible,
+      locked: this.locked,
+    });
   }
 }

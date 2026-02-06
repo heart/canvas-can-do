@@ -33,7 +33,7 @@ export class TransformController {
     };
 
     // Determine transform mode based on handle
-    if (!handle) {
+    if (!handle || handle === 'move') {
       this.mode = 'move';
     } else if (handle === 'rotate') {
       this.mode = 'rotate';
@@ -57,10 +57,15 @@ export class TransformController {
         break;
 
       case 'rotate':
-        const center = new Point(
-          this.startState.x + this.activeNode.width / 2,
-          this.startState.y + this.activeNode.height / 2
-        );
+        // Compute geometric center from top-left + rotation
+        const w = this.startState.width;
+        const h = this.startState.height;
+        const r0 = this.startState.rotation;
+        const cos0 = Math.cos(r0);
+        const sin0 = Math.sin(r0);
+        const centerX = this.startState.x + (w / 2) * cos0 - (h / 2) * sin0;
+        const centerY = this.startState.y + (w / 2) * sin0 + (h / 2) * cos0;
+        const center = new Point(centerX, centerY);
         
         const startAngle = Math.atan2(
           this.startPoint.y - center.y,
@@ -71,37 +76,58 @@ export class TransformController {
           point.x - center.x
         );
         
-        this.activeNode.rotation = this.startState.rotation + (currentAngle - startAngle);
+        const newRotation = this.startState.rotation + (currentAngle - startAngle);
+        this.activeNode.rotation = newRotation;
+
+        // Recompute top-left so the center stays fixed
+        const cos = Math.cos(newRotation);
+        const sin = Math.sin(newRotation);
+        const offsetX = (-w / 2) * cos + (h / 2) * sin;
+        const offsetY = (-w / 2) * sin - (h / 2) * cos;
+        this.activeNode.position.set(center.x + offsetX, center.y + offsetY);
         break;
 
       case 'resize':
         if (!this.activeHandle) break;
+
+        const MIN_SIZE = 10;
+        const rightEdge = this.startState.x + this.startState.width;
+        const bottomEdge = this.startState.y + this.startState.height;
 
         let newWidth = this.startState.width;
         let newHeight = this.startState.height;
         let newX = this.startState.x;
         let newY = this.startState.y;
 
-        // Handle resize based on which handle is being dragged
-        const [vertical, horizontal] = this.activeHandle.split('-');
-        
-        // Handle horizontal resize
-        if (horizontal === 'left') {
-          newWidth = Math.max(10, this.startState.width - dx);
-          newX = this.startState.x + (this.startState.width - newWidth);
-        } else if (horizontal === 'right') {
-          newWidth = Math.max(10, this.startState.width + dx);
+        const hasLeft = this.activeHandle.includes('left');
+        const hasRight = this.activeHandle.includes('right');
+        const hasTop = this.activeHandle.includes('top');
+        const hasBottom = this.activeHandle.includes('bottom');
+
+        if (hasRight) {
+          newWidth = this.startState.width + dx;
+        }
+        if (hasLeft) {
+          newWidth = this.startState.width - dx;
+          newX = this.startState.x + dx;
+        }
+        if (hasBottom) {
+          newHeight = this.startState.height + dy;
+        }
+        if (hasTop) {
+          newHeight = this.startState.height - dy;
+          newY = this.startState.y + dy;
         }
 
-        // Handle vertical resize
-        if (vertical === 'top') {
-          newHeight = Math.max(10, this.startState.height - dy);
-          newY = this.startState.y + (this.startState.height - newHeight);
-        } else if (vertical === 'bottom') {
-          newHeight = Math.max(10, this.startState.height + dy);
+        if (newWidth < MIN_SIZE) {
+          newWidth = MIN_SIZE;
+          if (hasLeft) newX = rightEdge - newWidth;
+        }
+        if (newHeight < MIN_SIZE) {
+          newHeight = MIN_SIZE;
+          if (hasTop) newY = bottomEdge - newHeight;
         }
 
-        // Update node
         this.activeNode.width = newWidth;
         this.activeNode.height = newHeight;
         this.activeNode.position.set(newX, newY);

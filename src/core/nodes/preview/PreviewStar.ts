@@ -2,7 +2,7 @@ import { PreviewBase } from './PreviewBase';
 import type { Point } from './types';
 
 export class PreviewStar extends PreviewBase {
-  protected redraw(a: Point, b: Point): void {
+  protected redraw(_start: Point, _end: Point): void {
     const r = this.getRect();
     const size = Math.min(r.w, r.h);
     const centerX = r.x + r.w / 2;

@@ -25,6 +25,7 @@ export class PointerController {
   private objectLayer: Container;
 
   private selectionManager: SelectionManager;
+  private clipboard: BaseNode[] = [];
 
   constructor(previewLayer: Container, objectLayer: Container, toolsLayer: Container) {
     this.previewLayer = previewLayer;
@@ -47,19 +48,62 @@ export class PointerController {
       this.selectionManager.setMultiSelect(true);
     }
 
+    // Copy (Ctrl/Cmd + C)
+    if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      this.clipboard = this.selectionManager.getSelectedNodes();
+    }
+
+    // Paste (Ctrl/Cmd + V)
+    if (e.key === 'v' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      const pasted: BaseNode[] = [];
+      const offset = 12;
+      this.clipboard.forEach(node => {
+        const clone = this.cloneNode(node, offset, offset);
+        if (clone) {
+          this.objectLayer.addChild(clone);
+          pasted.push(clone);
+        }
+      });
+
+      if (pasted.length) {
+        this.selectionManager.setMultiSelect(true);
+        pasted.forEach(node => this.selectionManager.select(node));
+        this.selectionManager.setMultiSelect(false);
+      }
+    }
+
     // Group shortcut (Ctrl+G or Cmd+G)
-    if (e.key === 'g' && (e.ctrlKey || e.metaKey)) {
+    if (e.key === 'g' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
       e.preventDefault();
       const group = this.selectionManager.createGroup();
       if (group) {
-        // Remove selected nodes and add group to object layer
-        Array.from(this.selectionManager.getSelectedNodes())
-          .filter(node => node !== group)
-          .forEach(node => {
-            this.objectLayer.removeChild(node);
-          });
-        this.objectLayer.addChild(group);
+        // Ensure group is on object layer; children are already reparented
+        if (!this.objectLayer.children.includes(group)) {
+          this.objectLayer.addChild(group);
+        }
       }
+    }
+
+    // Ungroup shortcut (Ctrl+Shift+G or Cmd+Shift+G)
+    if (e.key === 'g' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+      e.preventDefault();
+      const ungrouped = this.selectionManager.ungroupSelected();
+      // Re-add ungrouped children to object layer
+      ungrouped.forEach(child => {
+        if (!this.objectLayer.children.includes(child)) {
+          this.objectLayer.addChild(child);
+        }
+      });
+    }
+  }
+
+  private cloneNode(node: BaseNode, dx = 0, dy = 0): BaseNode | null {
+    try {
+      return node.clone(dx, dy);
+    } catch {
+      return null;
     }
   }
 
@@ -117,7 +161,7 @@ export class PointerController {
       this.selectionManager.select((hitObject as BaseNode) || null);
 
       // Begin move transform when clicking on a selected object body
-      if (hitObject) {
+      if (hitObject && this.selectionManager.getSelectedNodes().length === 1) {
         this.selectionManager.startTransform(point, 'move');
       }
     } else if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {

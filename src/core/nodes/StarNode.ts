@@ -57,14 +57,15 @@ export class StarNode extends BaseNode {
     const fillColor = typeof fill === 'string' ? parseInt(fill.replace('#', ''), 16) : fill;
     const strokeColor = typeof stroke === 'string' ? parseInt(stroke.replace('#', ''), 16) : stroke;
 
-    // Draw star
+    // Draw star anchored at top-left by offsetting with outerRadius
+    const offset = this.outerRadius;
     const points: number[] = [];
     for (let i = 0; i < this.points * 2; i++) {
       const radius = i % 2 === 0 ? this.outerRadius : this.innerRadius;
       const angle = (i * Math.PI) / this.points;
       points.push(
-        Math.cos(angle) * radius,
-        Math.sin(angle) * radius
+        Math.cos(angle) * radius + offset,
+        Math.sin(angle) * radius + offset
       );
     }
     this.graphics.poly(points);
@@ -91,5 +92,20 @@ export class StarNode extends BaseNode {
     this.style = { ...this.style, ...style };
     this.redraw();
     return this;
+  }
+
+  clone(offsetX = 0, offsetY = 0): StarNode {
+    return new StarNode({
+      points: this.points,
+      innerRadius: this.innerRadius,
+      outerRadius: this.outerRadius,
+      x: this.position.x + offsetX,
+      y: this.position.y + offsetY,
+      rotation: this.rotation,
+      scale: { x: this.scale.x, y: this.scale.y },
+      style: { ...this.style },
+      visible: this.visible,
+      locked: this.locked,
+    });
   }
 }

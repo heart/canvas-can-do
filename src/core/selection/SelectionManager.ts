@@ -3,6 +3,7 @@ import type { BaseNode } from '../nodes/BaseNode';
 import { TransformController } from './TransformController';
 import { LineTransformController } from './LineTransformController';
 import type { LineNode } from '../nodes/LineNode';
+import { GroupNode } from '../nodes/GroupNode';
 
 export class SelectionManager {
   private selectedNodes: Set<BaseNode> = new Set();
@@ -20,6 +21,7 @@ export class SelectionManager {
   }
 
   startTransform(point: Point, handle?: string) {
+    if (this.selectedNodes.size !== 1) return; // disable transforms for multi-select
     const selectedNode = Array.from(this.selectedNodes)[0];
     if (!selectedNode) return;
 
@@ -33,6 +35,7 @@ export class SelectionManager {
   }
 
   updateTransform(point: Point) {
+    if (this.selectedNodes.size !== 1) return;
     const selectedNode = Array.from(this.selectedNodes)[0];
     if (selectedNode?.type === 'line') {
       this.lineTransformController.updateTransform(point);
@@ -43,6 +46,7 @@ export class SelectionManager {
   }
 
   endTransform() {
+    if (this.selectedNodes.size !== 1) return;
     const selectedNode = Array.from(this.selectedNodes)[0];
     if (selectedNode?.type === 'line') {
       this.lineTransformController.endTransform();
@@ -54,6 +58,7 @@ export class SelectionManager {
 
   hitTestHandle(point: Point): string | null {
     if (this.selectedNodes.size === 0) return null;
+    if (this.selectedNodes.size > 1) return null; // no handles for multi-select
 
     const node = Array.from(this.selectedNodes)[0];
 
@@ -146,15 +151,16 @@ export class SelectionManager {
     if (!this.isMultiSelect) {
       this.selectedNodes.clear();
     }
-    
+
     if (node) {
       if (this.isMultiSelect && this.selectedNodes.has(node)) {
-        // If multiselect and already selected, deselect it
+        // Toggle off
         this.selectedNodes.delete(node);
       } else {
         this.selectedNodes.add(node);
       }
     }
+
     this.updateSelectionVisuals();
   }
 
@@ -164,11 +170,17 @@ export class SelectionManager {
     const nodes = Array.from(this.selectedNodes);
     const bounds = this.getSelectionBounds();
 
-    // Create group at the center of selected objects
+    // Create group at top-left of bounds and re-parent children with local coords
     const group = new GroupNode({
-      children: nodes,
+      children: [],
       x: bounds.x,
       y: bounds.y
+    });
+
+    nodes.forEach(node => {
+      // Adjust to group's local space
+      node.position.set(node.position.x - bounds.x, node.position.y - bounds.y);
+      group.addChild(node);
     });
 
     // Clear selection and select the new group
@@ -177,6 +189,27 @@ export class SelectionManager {
     this.updateSelectionVisuals();
 
     return group;
+  }
+
+  ungroupSelected(): BaseNode[] {
+    if (this.selectedNodes.size !== 1) return [];
+    const node = Array.from(this.selectedNodes)[0];
+    if (!(node instanceof GroupNode)) return [];
+
+    // Move children to world (parent) space
+    const children = [...node.children] as BaseNode[];
+    children.forEach(child => {
+      const worldPos = node.toGlobal(child.position);
+      child.position.copyFrom(worldPos);
+      node.removeChild(child);
+    });
+
+    // Replace selection with the children
+    this.selectedNodes.clear();
+    children.forEach(c => this.selectedNodes.add(c));
+    this.updateSelectionVisuals();
+
+    return children;
   }
 
   private getSelectionBounds() {
@@ -217,6 +250,20 @@ export class SelectionManager {
   private updateSelectionVisuals() {
     this.selectionGraphics.clear();
 
+    if (this.selectedNodes.size === 0) return;
+
+    // Multi-select: draw a single bounding box, no handles/rotation
+    if (this.selectedNodes.size > 1) {
+      const bounds = this.getSelectionBounds();
+      this.selectionGraphics.position.set(0, 0);
+      this.selectionGraphics.rotation = 0;
+      this.selectionGraphics.pivot.set(0, 0);
+      this.selectionGraphics.rect(bounds.x, bounds.y, bounds.width, bounds.height);
+      this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 1 });
+      return;
+    }
+
+    // Single selection
     for (const node of this.selectedNodes) {
       const width = node.width;
       const height = node.height;

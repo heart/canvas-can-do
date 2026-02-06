@@ -74,12 +74,18 @@ export class CCDApp {
   }
 
   initPointerController() {
-    this.pointerController = new PointerController(this.previewLayer, this.objectLayer, this.toolsLayer);
+    this.pointerController = new PointerController(
+      this.previewLayer,
+      this.objectLayer,
+      this.toolsLayer
+    );
 
     // Listen for shape creation events
     window.addEventListener('shape:created', ((e: ShapeCreatedEvent) => {
       const shape = e.detail.shape;
       this.objectLayer.addChild(shape);
+
+      console.log(e);
 
       this.useTool('select');
     }) as EventListener);

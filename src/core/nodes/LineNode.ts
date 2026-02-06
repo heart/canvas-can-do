@@ -86,4 +86,27 @@ export class LineNode extends BaseNode {
     this.redraw();
     return this;
   }
+
+  // Expose a safe public refresh for external controllers
+  refresh(): void {
+    this.redraw();
+  }
+
+  clone(offsetX = 0, offsetY = 0): LineNode {
+    const startX = this.position.x + this.startX + offsetX;
+    const startY = this.position.y + this.startY + offsetY;
+    const endX = this.position.x + this.endX + offsetX;
+    const endY = this.position.y + this.endY + offsetY;
+    return new LineNode({
+      startX,
+      startY,
+      endX,
+      endY,
+      rotation: this.rotation,
+      scale: { x: this.scale.x, y: this.scale.y },
+      style: { ...this.style },
+      visible: this.visible,
+      locked: this.locked,
+    });
+  }
 }
