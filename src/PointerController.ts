@@ -4,6 +4,7 @@ import { PreviewLine } from './core/nodes/preview/PreviewLine';
 import { PreviewStar } from './core/nodes/preview/PreviewStar';
 import { PreviewBase } from './core/nodes/preview/PreviewBase';
 import { SelectionManager } from './core/selection/SelectionManager';
+import { BaseNode } from './core/nodes/BaseNode';
 
 import type { ToolName } from './index';
 import { Container } from 'pixi.js';
@@ -77,13 +78,13 @@ export class PointerController {
     const point = { x: e.offsetX, y: e.offsetY };
 
     if (this.activeTool === 'select') {
-      const hitObject = this.objectLayer?.children.find(child => {
+      const hitObject = this.objectLayer?.children.find((child) => {
         if (child === this.objectLayer) return false;
         const bounds = child.getBounds();
         return bounds.containsPoint(point.x, point.y);
       });
-      
-      this.selectionManager.select(hitObject as BaseNode || null);
+
+      this.selectionManager.select((hitObject as BaseNode) || null);
     } else if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
       this.preview.begin(point);
     }
