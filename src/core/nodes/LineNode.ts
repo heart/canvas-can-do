@@ -2,14 +2,20 @@ import { Graphics } from 'pixi.js';
 import { BaseNode } from './BaseNode';
 import type { Style } from './BaseNode';
 
-export class CircleNode extends BaseNode {
-  readonly type = 'circle' as const;
-  radius: number;
+export class LineNode extends BaseNode {
+  readonly type = 'line' as const;
   protected graphics: Graphics;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
 
   constructor(options: {
     id?: string;
-    radius: number;
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
     x?: number;
     y?: number;
     rotation?: number;
@@ -20,7 +26,7 @@ export class CircleNode extends BaseNode {
   }) {
     super({
       id: options.id,
-      type: 'circle',
+      type: 'line',
       x: options.x,
       y: options.y,
       rotation: options.rotation,
@@ -30,9 +36,14 @@ export class CircleNode extends BaseNode {
       locked: options.locked,
     });
 
-    this.radius = options.radius;
-    this._width = this.radius * 2;
-    this._height = this.radius * 2;
+    this.startX = options.startX;
+    this.startY = options.startY;
+    this.endX = options.endX;
+    this.endY = options.endY;
+
+    // Calculate width and height
+    this._width = Math.abs(this.endX - this.startX);
+    this._height = Math.abs(this.endY - this.startY);
 
     // Setup graphics
     this.graphics = new Graphics();
@@ -41,26 +52,18 @@ export class CircleNode extends BaseNode {
   }
 
   protected redraw(): void {
-    const { fill, stroke, strokeWidth = 1, opacity = 1 } = this.style;
+    const { stroke, strokeWidth = 1, opacity = 1 } = this.style;
 
     this.graphics.clear();
 
     // Convert hex color strings to numbers if needed
-    const fillColor = typeof fill === 'string' ? parseInt(fill.replace('#', ''), 16) : fill;
     const strokeColor = typeof stroke === 'string' ? parseInt(stroke.replace('#', ''), 16) : stroke;
 
-    // Draw circle
-    this.graphics.circle(0, 0, this.radius);
+    // Draw line
+    this.graphics.moveTo(this.startX, this.startY);
+    this.graphics.lineTo(this.endX, this.endY);
 
-    // Apply fill if needed
-    if (fill !== undefined) {
-      this.graphics.fill({
-        color: fillColor ?? 0xffffff,
-        alpha: opacity
-      });
-    }
-
-    // Apply stroke if needed
+    // Apply stroke
     if (stroke !== undefined) {
       this.graphics.stroke({
         width: strokeWidth,

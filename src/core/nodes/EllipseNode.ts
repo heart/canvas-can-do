@@ -2,14 +2,14 @@ import { Graphics } from 'pixi.js';
 import { BaseNode } from './BaseNode';
 import type { Style } from './BaseNode';
 
-export class CircleNode extends BaseNode {
-  readonly type = 'circle' as const;
-  radius: number;
+export class EllipseNode extends BaseNode {
+  readonly type = 'ellipse' as const;
   protected graphics: Graphics;
 
   constructor(options: {
     id?: string;
-    radius: number;
+    width: number;
+    height: number;
     x?: number;
     y?: number;
     rotation?: number;
@@ -20,7 +20,7 @@ export class CircleNode extends BaseNode {
   }) {
     super({
       id: options.id,
-      type: 'circle',
+      type: 'ellipse',
       x: options.x,
       y: options.y,
       rotation: options.rotation,
@@ -30,9 +30,8 @@ export class CircleNode extends BaseNode {
       locked: options.locked,
     });
 
-    this.radius = options.radius;
-    this._width = this.radius * 2;
-    this._height = this.radius * 2;
+    this._width = options.width;
+    this._height = options.height;
 
     // Setup graphics
     this.graphics = new Graphics();
@@ -49,8 +48,8 @@ export class CircleNode extends BaseNode {
     const fillColor = typeof fill === 'string' ? parseInt(fill.replace('#', ''), 16) : fill;
     const strokeColor = typeof stroke === 'string' ? parseInt(stroke.replace('#', ''), 16) : stroke;
 
-    // Draw circle
-    this.graphics.circle(0, 0, this.radius);
+    // Draw ellipse
+    this.graphics.ellipse(0, 0, this.width / 2, this.height / 2);
 
     // Apply fill if needed
     if (fill !== undefined) {

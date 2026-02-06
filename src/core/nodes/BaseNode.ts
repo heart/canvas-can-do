@@ -2,7 +2,7 @@ import { Container } from 'pixi.js';
 import type { Vec2 } from '../math/Vec2';
 import { vec2 } from '../math/Vec2';
 
-export type NodeType = 'rectangle' | 'circle' | 'text';
+export type NodeType = 'rectangle' | 'circle' | 'text' | 'line' | 'ellipse' | 'star';
 
 export interface Style {
   fill?: string;

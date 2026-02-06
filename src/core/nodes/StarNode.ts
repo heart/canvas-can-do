@@ -2,14 +2,18 @@ import { Graphics } from 'pixi.js';
 import { BaseNode } from './BaseNode';
 import type { Style } from './BaseNode';
 
-export class CircleNode extends BaseNode {
-  readonly type = 'circle' as const;
-  radius: number;
+export class StarNode extends BaseNode {
+  readonly type = 'star' as const;
   protected graphics: Graphics;
+  points: number;
+  innerRadius: number;
+  outerRadius: number;
 
   constructor(options: {
     id?: string;
-    radius: number;
+    points: number;
+    innerRadius: number;
+    outerRadius: number;
     x?: number;
     y?: number;
     rotation?: number;
@@ -20,7 +24,7 @@ export class CircleNode extends BaseNode {
   }) {
     super({
       id: options.id,
-      type: 'circle',
+      type: 'star',
       x: options.x,
       y: options.y,
       rotation: options.rotation,
@@ -30,9 +34,13 @@ export class CircleNode extends BaseNode {
       locked: options.locked,
     });
 
-    this.radius = options.radius;
-    this._width = this.radius * 2;
-    this._height = this.radius * 2;
+    this.points = options.points;
+    this.innerRadius = options.innerRadius;
+    this.outerRadius = options.outerRadius;
+
+    // Set dimensions based on outer radius
+    this._width = this.outerRadius * 2;
+    this._height = this.outerRadius * 2;
 
     // Setup graphics
     this.graphics = new Graphics();
@@ -49,8 +57,17 @@ export class CircleNode extends BaseNode {
     const fillColor = typeof fill === 'string' ? parseInt(fill.replace('#', ''), 16) : fill;
     const strokeColor = typeof stroke === 'string' ? parseInt(stroke.replace('#', ''), 16) : stroke;
 
-    // Draw circle
-    this.graphics.circle(0, 0, this.radius);
+    // Draw star
+    const points: number[] = [];
+    for (let i = 0; i < this.points * 2; i++) {
+      const radius = i % 2 === 0 ? this.outerRadius : this.innerRadius;
+      const angle = (i * Math.PI) / this.points;
+      points.push(
+        Math.cos(angle) * radius,
+        Math.sin(angle) * radius
+      );
+    }
+    this.graphics.poly(points);
 
     // Apply fill if needed
     if (fill !== undefined) {
