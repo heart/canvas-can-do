@@ -160,11 +160,13 @@ export class PointerController {
       }
 
       // If no handle hit, check for object selection
-      const hitObject = this.objectLayer?.children.find((child) => {
-        if (child === this.objectLayer) return false;
-        const bounds = child.getBounds();
-        return bounds.containsPoint(point.x, point.y);
-      });
+      const hitObject = [...(this.objectLayer?.children || [])]
+        .reverse()
+        .find((child) => {
+          if (child === this.objectLayer) return false;
+          const bounds = child.getBounds();
+          return bounds.containsPoint(point.x, point.y);
+        });
 
       this.selectionManager.select((hitObject as BaseNode) || null);
 
@@ -184,12 +186,14 @@ export class PointerController {
       // Update transform if in progress
       this.selectionManager.updateTransform(point);
 
-      // Otherwise show hover state
-      const hitObject = this.objectLayer?.children.find((child) => {
-        if (child === this.objectLayer) return false;
-        const bounds = child.getBounds();
-        return bounds.containsPoint(point.x, point.y);
-      });
+      // Otherwise show hover state - search from top to bottom of z-order
+      const hitObject = [...(this.objectLayer?.children || [])]
+        .reverse()
+        .find((child) => {
+          if (child === this.objectLayer) return false;
+          const bounds = child.getBounds();
+          return bounds.containsPoint(point.x, point.y);
+        });
 
       if (hitObject) {
         const bounds = hitObject.getBounds();
