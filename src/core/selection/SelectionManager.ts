@@ -200,6 +200,12 @@ export class SelectionManager {
     this.selectedNodes.add(group);
     this.updateSelectionVisuals();
 
+    // Dispatch layer hierarchy changed event
+    const event = new CustomEvent('layer:changed', {
+      detail: { hierarchy: LayerHierarchy.getHierarchy(parent) }
+    });
+    window.dispatchEvent(event);
+
     return group;
   }
 
@@ -231,6 +237,14 @@ export class SelectionManager {
     this.selectedNodes.clear();
     children.forEach(c => this.selectedNodes.add(c));
     this.updateSelectionVisuals();
+
+    // Dispatch layer hierarchy changed event
+    if (parent) {
+      const event = new CustomEvent('layer:changed', {
+        detail: { hierarchy: LayerHierarchy.getHierarchy(parent) }
+      });
+      window.dispatchEvent(event);
+    }
 
     return children;
   }

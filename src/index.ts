@@ -84,9 +84,7 @@ export class CCDApp {
     window.addEventListener('shape:created', ((e: ShapeCreatedEvent) => {
       const shape = e.detail.shape;
       this.objectLayer.addChild(shape);
-
-      console.log(e);
-
+      this.dispatchLayerHierarchyChanged();
       this.useTool('select');
     }) as EventListener);
 
@@ -134,6 +132,14 @@ export class CCDApp {
 
     const event = new CustomEvent('tool:changed', {
       detail: { tool: toolName },
+    });
+    window.dispatchEvent(event);
+  }
+
+  dispatchLayerHierarchyChanged() {
+    const hierarchy = LayerHierarchy.getHierarchy(this.objectLayer);
+    const event = new CustomEvent('layer:changed', {
+      detail: { hierarchy }
     });
     window.dispatchEvent(event);
   }
