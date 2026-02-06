@@ -26,18 +26,26 @@ if (editor) {
   app.init(editor);
 }
 
+// Function to update active tool button
+function updateActiveToolButton(tool: ToolName) {
+  document.querySelectorAll('.tool-btn').forEach((el) => el.classList.remove('active'));
+  const btn = document.getElementById(`${tool}-btn`);
+  btn?.classList.add('active');
+}
+
 // Add click handlers for all tool buttons
 tools.forEach((tool) => {
   const btn = document.getElementById(`${tool}-btn`);
   btn?.addEventListener('click', () => {
-    // Remove active class from all buttons
-    document.querySelectorAll('.tool-btn').forEach((el) => el.classList.remove('active'));
-    // Add active class to clicked button
-    btn.classList.add('active');
+    updateActiveToolButton(tool);
     app.useTool(tool);
   });
 });
 
+// Listen for tool changes from the app
+window.addEventListener('tool:changed', ((e: CustomEvent<{ tool: ToolName }>) => {
+  updateActiveToolButton(e.detail.tool);
+}) as EventListener);
+
 // Start with select tool active
-const selectBtn = document.getElementById('select-btn');
-selectBtn?.classList.add('active');
+updateActiveToolButton('select');
