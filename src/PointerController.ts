@@ -13,6 +13,7 @@ import { EllipseNode } from './core/nodes/EllipseNode';
 import { LineNode } from './core/nodes/LineNode';
 import { StarNode } from './core/nodes/StarNode';
 import { TextNode } from './core/nodes/TextNode';
+import { Application } from 'pixi.js';
 
 export class PointerController {
   private preview: PreviewBase;
@@ -27,27 +28,31 @@ export class PointerController {
   private selectionManager: SelectionManager;
   private clipboard: BaseNode[] = [];
   private onLayerChanged: () => void;
+  private isPanning = false;
+  private lastPan?: Point;
+  private app?: Application;
+  private world?: Container;
 
   constructor(
     previewLayer: Container,
     objectLayer: Container,
     toolsLayer: Container,
-    onLayerChanged: () => void
+    onLayerChanged: () => void,
+    app?: Application,
+    world?: Container
   ) {
     this.previewLayer = previewLayer;
     this.objectLayer = objectLayer;
     this.onLayerChanged = onLayerChanged;
+    this.app = app;
+    this.world = world;
 
     this.selectionManager = new SelectionManager(toolsLayer);
 
     this.preview = new PreviewRect(previewLayer);
-
-    // Add keyboard event listeners
-    window.addEventListener('keydown', this.handleKeyDown.bind(this));
-    window.addEventListener('keyup', this.handleKeyUp.bind(this));
   }
 
-  private handleKeyDown(e: KeyboardEvent) {
+  handleKeyDown(e: KeyboardEvent) {
     if (e.key === 'Shift') {
       if ('setShiftKey' in this.preview) {
         (this.preview as any).setShiftKey(true);
@@ -61,6 +66,11 @@ export class PointerController {
       if (removed.length) {
         e.preventDefault();
       }
+    }
+
+    if (e.key === ' ' && !e.repeat) {
+      this.isPanning = true;
+      this.setCursor('grab');
     }
 
     // Copy (Ctrl/Cmd + C)
@@ -132,6 +142,12 @@ export class PointerController {
       const moved = this.selectionManager.nudgeSelected(dx, dy);
       if (moved) this.onLayerChanged();
     }
+
+    if (e.key === ' ' && !e.repeat) {
+      e.preventDefault();
+      this.isPanning = true;
+      this.setCursor('grab');
+    }
   }
 
   private cloneNode(node: BaseNode, dx = 0, dy = 0): BaseNode | null {
@@ -142,12 +158,18 @@ export class PointerController {
     }
   }
 
-  private handleKeyUp(e: KeyboardEvent) {
+  handleKeyUp(e: KeyboardEvent) {
     if (e.key === 'Shift') {
       if ('setShiftKey' in this.preview) {
         (this.preview as any).setShiftKey(false);
       }
       this.selectionManager.setMultiSelect(false);
+    }
+
+    if (e.key === ' ') {
+      this.isPanning = false;
+      this.lastPan = undefined;
+      this.setCursor(null);
     }
   }
 
@@ -175,7 +197,14 @@ export class PointerController {
   }
 
   onPointerDown(e: PointerEvent) {
-    const point = new Point(e.offsetX, e.offsetY);
+    if (this.isPanning && this.world && this.app) {
+      this.lastPan = new Point(e.clientX, e.clientY);
+      this.setCursor('grabbing');
+      return;
+    }
+
+    const point = this.toWorldPoint(e);
+    const globalPoint = this.toGlobalPoint(e);
 
     if (this.activeTool === 'select') {
       // Check if we hit a transform handle first
@@ -192,7 +221,8 @@ export class PointerController {
         .find((child) => {
           if (child === this.objectLayer) return false;
           const bounds = child.getBounds();
-          return bounds.containsPoint(point.x, point.y);
+          // bounds are global; use global point
+          return bounds.containsPoint(globalPoint.x, globalPoint.y);
         });
 
       this.selectionManager.select((hitObject as BaseNode) || null);
@@ -210,7 +240,19 @@ export class PointerController {
   }
 
   onPointerMove(e: PointerEvent) {
-    const point = new Point(e.offsetX, e.offsetY);
+    if (this.isPanning && this.world && this.app) {
+      if (this.lastPan) {
+        const dx = e.clientX - this.lastPan.x;
+        const dy = e.clientY - this.lastPan.y;
+        this.world.position.x += dx;
+        this.world.position.y += dy;
+        this.lastPan.set(e.clientX, e.clientY);
+      }
+      return;
+    }
+
+    const point = this.toWorldPoint(e);
+    const globalPoint = this.toGlobalPoint(e);
 
     if (this.activeTool === 'select') {
       // Update transform if in progress
@@ -222,7 +264,7 @@ export class PointerController {
         .find((child) => {
           if (child === this.objectLayer) return false;
           const bounds = child.getBounds();
-          return bounds.containsPoint(point.x, point.y);
+          return bounds.containsPoint(globalPoint.x, globalPoint.y);
         });
 
       if (hitObject) {
@@ -246,6 +288,14 @@ export class PointerController {
     if (this.activeTool === 'select') {
       this.selectionManager.endTransform();
     }
+
+    if (this.isPanning) {
+      this.isPanning = false;
+      this.lastPan = undefined;
+      this.setCursor(null);
+      return;
+    }
+
     const rect = this.preview.end();
     if (!rect) return;
 
@@ -365,5 +415,35 @@ export class PointerController {
   cancel() {
     this.preview.cancel();
     this.setTool('select');
+    this.isPanning = false;
+    this.lastPan = undefined;
+    this.setCursor(null);
+  }
+
+  private setCursor(name: string | null) {
+    const canvas = this.app?.renderer?.canvas as unknown as HTMLCanvasElement | undefined;
+    if (!canvas) return;
+    canvas.style.cursor = name ? name : '';
+  }
+
+  private toGlobalPoint(e: PointerEvent): Point {
+    if (!this.app) return new Point(e.clientX, e.clientY);
+    const p = new Point();
+    this.app.renderer.events.mapPositionToPoint(p, e.clientX, e.clientY);
+    return p;
+  }
+
+  private toWorldPoint(e: PointerEvent): Point {
+    if (!this.world || !this.app) return new Point(e.offsetX, e.offsetY);
+
+    // Convert client coords to renderer (stage) coords
+    const canvas = this.app.renderer.canvas as unknown as HTMLCanvasElement;
+    const rect = canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    const globalPoint = new Point(screenX, screenY);
+    // Map through world transform to local space (handles scale/position)
+    return this.world.toLocal(globalPoint);
   }
 }

@@ -29,6 +29,7 @@ export const TOOL_CURSOR: Record<ToolName, string | null> = {
 export class CCDApp {
   app = new Application();
 
+  world = new Container();
   objectLayer = new Container();
   previewLayer = new Container();
   toolsLayer = new Container();
@@ -51,10 +52,11 @@ export class CCDApp {
     host.appendChild(this.app.canvas);
 
     // layers
-    this.app.stage.addChild(this.objectLayer);
-    this.app.stage.addChild(this.previewLayer);
-    this.app.stage.addChild(this.toolsLayer);
-    this.app.stage.addChild(this.helperLayer);
+    this.world.addChild(this.objectLayer);
+    this.world.addChild(this.previewLayer);
+    this.world.addChild(this.toolsLayer);
+    this.world.addChild(this.helperLayer);
+    this.app.stage.addChild(this.world);
     this.app.stage.addChild(this.uiLayer);
 
     // events
@@ -72,6 +74,9 @@ export class CCDApp {
     });
 
     this.initPointerController();
+
+    // zoom hotkeys
+    window.addEventListener('keydown', this.handleZoomKeys.bind(this));
   }
 
   initPointerController() {
@@ -79,7 +84,9 @@ export class CCDApp {
       this.previewLayer,
       this.objectLayer,
       this.toolsLayer,
-      this.dispatchLayerHierarchyChanged.bind(this)
+      this.dispatchLayerHierarchyChanged.bind(this),
+      this.app,
+      this.world
     );
 
     // Listen for shape creation events
@@ -107,6 +114,70 @@ export class CCDApp {
     this.host?.addEventListener('pointercancel', (_) => {
       this.pointerController?.cancel();
     });
+
+    window.addEventListener(
+      'keydown',
+      this.pointerController.handleKeyDown.bind(this.pointerController)
+    );
+    window.addEventListener(
+      'keyup',
+      this.pointerController.handleKeyUp.bind(this.pointerController)
+    );
+  }
+
+  private handleZoomKeys(e: KeyboardEvent) {
+    const hasMeta = e.ctrlKey || e.metaKey;
+    const key = e.key;
+
+    // ctrl/cmd + plus/equals
+    if (hasMeta && (key === '+' || key === '=')) {
+      e.preventDefault();
+      this.setZoom(this.world.scale.x + 0.1);
+      return;
+    }
+
+    // ctrl/cmd + minus
+    if (hasMeta && key === '-') {
+      e.preventDefault();
+      this.setZoom(this.world.scale.x - 0.1);
+      return;
+    }
+
+    // absolute zoom with digits (no ctrl/cmd)
+    if (!hasMeta) {
+      if (key === '0') {
+        e.preventDefault();
+        this.setZoom(1);
+      } else if (/^[1-9]$/.test(key)) {
+        e.preventDefault();
+        const level = 1 + parseInt(key, 10) * 0.1;
+        this.setZoom(level);
+      }
+    }
+  }
+
+  private setZoom(newScale: number) {
+    const min = 0.1;
+    const max = 5;
+    const clamped = Math.max(min, Math.min(max, newScale));
+
+    const oldScale = this.world.scale.x;
+    if (clamped === oldScale) return;
+
+    const center = {
+      x: this.app.screen.width / 2,
+      y: this.app.screen.height / 2,
+    };
+
+    // world point at screen center before scaling
+    const worldX = (center.x - this.world.position.x) / oldScale;
+    const worldY = (center.y - this.world.position.y) / oldScale;
+
+    // apply new scale
+    this.world.scale.set(clamped);
+
+    // reposition so center stays fixed
+    this.world.position.set(center.x - worldX * clamped, center.y - worldY * clamped);
   }
 
   setCursor(name: string | null) {
