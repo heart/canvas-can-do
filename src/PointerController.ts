@@ -1,5 +1,4 @@
 import { PreviewRect } from './core/nodes/preview/PreviewRect';
-import { PreviewCircle } from './core/nodes/preview/PreviewCircle';
 import { PreviewEllipse } from './core/nodes/preview/PreviewEllipse';
 import { PreviewLine } from './core/nodes/preview/PreviewLine';
 import { PreviewStar } from './core/nodes/preview/PreviewStar';
@@ -23,7 +22,7 @@ export class PointerController {
   constructor(previewLayer: Container) {
     this.previewLayer = previewLayer;
     this.preview = new PreviewRect(previewLayer);
-    
+
     // Add keyboard event listeners
     window.addEventListener('keydown', this.handleKeyDown.bind(this));
     window.addEventListener('keyup', this.handleKeyUp.bind(this));
