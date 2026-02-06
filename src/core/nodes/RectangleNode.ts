@@ -49,16 +49,19 @@ export class RectangleNode extends BaseNode {
 
     this.graphics.clear();
 
-    // Fill
-    if (fill !== undefined) {
-      this.graphics.beginFill({ color: fillColor ?? 0xffffff, alpha: opacity });
-    }
-
-    // Draw rectangle with stroke
+    // Draw rectangle with fill and stroke
     if (this.cornerRadius) {
       this.graphics.roundRect(0, 0, this.width, this.height, this.cornerRadius);
     } else {
       this.graphics.rect(0, 0, this.width, this.height);
+    }
+
+    // Apply fill if needed
+    if (fill !== undefined) {
+      this.graphics.fill({ 
+        color: fillColor ?? 0xffffff, 
+        alpha: opacity 
+      });
     }
 
     // Apply stroke if needed
@@ -68,10 +71,6 @@ export class RectangleNode extends BaseNode {
         color: strokeColor ?? 0x000000,
         alpha: opacity,
       });
-    }
-
-    if (fill !== undefined) {
-      this.graphics.fill();
     }
   }
 
