@@ -2,8 +2,29 @@ import { PreviewBase } from './PreviewBase';
 import type { Point } from './types';
 
 export class PreviewRect extends PreviewBase {
+  private shiftKey = false;
+
+  setShiftKey(pressed: boolean): void {
+    this.shiftKey = pressed;
+    if (this.active) {
+      this.redraw(this.start, this.last);
+    }
+  }
+
   protected redraw(a: Point, b: Point): void {
-    const r = this.getRect();
+    let r = this.getRect();
+
+    // If shift is pressed, make it a square based on the larger dimension
+    if (this.shiftKey) {
+      const size = Math.max(r.w, r.h);
+      if (r.w < r.h) {
+        if (b.x < a.x) r.x = a.x - size;
+        r.w = size;
+      } else {
+        if (b.y < a.y) r.y = a.y - size;
+        r.h = size;
+      }
+    }
 
     this.g.clear();
 

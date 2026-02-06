@@ -94,11 +94,27 @@ export class PointerController {
 
     switch (this.activeTool) {
       case 'rectangle':
+        let rectWidth = rect.w;
+        let rectHeight = rect.h;
+        let rectX = rect.x;
+        let rectY = rect.y;
+
+        if (e.shiftKey) {
+          const size = Math.max(rect.w, rect.h);
+          if (rect.w < rect.h) {
+            if (this.preview.last.x < this.preview.start.x) rectX = this.preview.start.x - size;
+            rectWidth = size;
+          } else {
+            if (this.preview.last.y < this.preview.start.y) rectY = this.preview.start.y - size;
+            rectHeight = size;
+          }
+        }
+
         shape = new RectangleNode({
-          width: rect.w,
-          height: rect.h,
-          x: rect.x,
-          y: rect.y,
+          width: rectWidth,
+          height: rectHeight,
+          x: rectX,
+          y: rectY,
           style: defaultStyle,
         });
         break;
