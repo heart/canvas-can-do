@@ -1,6 +1,5 @@
 import { Graphics } from 'pixi.js';
 import { BaseNode } from './BaseNode';
-import type { Transform2D } from '../math/Transform2D';
 import type { Style } from './BaseNode';
 
 export class RectangleNode extends BaseNode {
@@ -13,7 +12,10 @@ export class RectangleNode extends BaseNode {
     width: number;
     height: number;
     cornerRadius?: number;
-    transform?: Transform2D;
+    x?: number;
+    y?: number;
+    rotation?: number;
+    scale?: number | { x: number; y: number };
     style?: Style;
     visible?: boolean;
     locked?: boolean;
@@ -21,7 +23,10 @@ export class RectangleNode extends BaseNode {
     super({
       id: options.id,
       type: 'rectangle',
-      transform: options.transform,
+      x: options.x,
+      y: options.y,
+      rotation: options.rotation,
+      scale: options.scale,
       style: options.style,
       visible: options.visible,
       locked: options.locked,

@@ -1,5 +1,4 @@
 import { Container } from 'pixi.js';
-import { Transform2D } from '../math/Transform2D';
 import type { Vec2 } from '../math/Vec2';
 import { vec2 } from '../math/Vec2';
 
@@ -15,7 +14,6 @@ export interface Style {
 export class BaseNode extends Container {
   readonly id: string;
   readonly type: NodeType;
-  transform: Transform2D;
   style: Style;
   locked: boolean;
   protected _width: number = 0;
@@ -24,7 +22,10 @@ export class BaseNode extends Container {
   constructor(options: {
     id?: string;
     type: NodeType;
-    transform?: Transform2D;
+    x?: number;
+    y?: number;
+    rotation?: number;
+    scale?: number | { x: number; y: number };
     style?: Style;
     visible?: boolean;
     locked?: boolean;
@@ -32,7 +33,6 @@ export class BaseNode extends Container {
     super();
     this.id = options.id ?? crypto.randomUUID();
     this.type = options.type;
-    this.transform = options.transform ?? new Transform2D();
     this.style = options.style ?? {
       fill: '#ffffff',
       stroke: '#000000',
@@ -41,9 +41,21 @@ export class BaseNode extends Container {
     };
     this.visible = options.visible ?? true;
     this.locked = options.locked ?? false;
-    
-    // Initial transform sync
-    this.syncTransform();
+
+    // Set initial transform
+    if (options.x !== undefined || options.y !== undefined) {
+      this.position.set(options.x ?? 0, options.y ?? 0);
+    }
+    if (options.rotation !== undefined) {
+      this.rotation = options.rotation;
+    }
+    if (options.scale !== undefined) {
+      if (typeof options.scale === 'number') {
+        this.scale.set(options.scale, options.scale);
+      } else {
+        this.scale.set(options.scale.x, options.scale.y);
+      }
+    }
   }
 
   get width(): number {
@@ -62,118 +74,39 @@ export class BaseNode extends Container {
     this._height = value;
   }
 
-  protected syncTransform(): void {
-    this.position.set(this.transform.x, this.transform.y);
-    this.rotation = this.transform.rotation;
-    this.scale.set(this.transform.scaleX, this.transform.scaleY);
-  }
-
-  updateTransform() {
-    this.syncTransform();
-    super.updateTransform();
-  }
-
-  // Position
-  get x(): number {
-    return this.transform.x;
-  }
-
-  set x(value: number) {
-    this.transform.x = value;
-  }
-
-  get y(): number {
-    return this.transform.y;
-  }
-
-  set y(value: number) {
-    this.transform.y = value;
-  }
-
-  get position(): Vec2 {
-    return this.transform.position;
-  }
-
-  set position(value: Vec2) {
-    this.transform.position = value;
-  }
-
+  // Transform convenience methods
   setPosition(x: number, y: number): this {
-    this.transform.setPosition(x, y);
+    this.position.set(x, y);
     return this;
-  }
-
-  // Scale
-  get scaleX(): number {
-    return this.transform.scaleX;
-  }
-
-  get scaleY(): number {
-    return this.transform.scaleY;
   }
 
   setScale(sx: number, sy = sx): this {
-    this.transform.setScale(sx, sy);
+    this.scale.set(sx, sy);
     return this;
-  }
-
-  // Rotation
-  get rotation(): number {
-    return this.transform.rotation;
-  }
-
-  set rotation(rad: number) {
-    this.transform.rotation = rad;
   }
 
   setRotation(rad: number): this {
-    this.transform.setRotation(rad);
+    this.rotation = rad;
     return this;
-  }
-
-  // Pivot
-  get pivot(): Vec2 {
-    return this.transform.pivot;
-  }
-
-  set pivot(value: Vec2) {
-    this.transform.pivot = value;
   }
 
   setPivot(x: number, y: number): this {
-    this.transform.pivot = vec2(x, y);
+    this.pivot.set(x, y);
     return this;
   }
 
-  // Transform operations
   translate(x: number, y: number): this {
-    this.transform.translate(x, y);
+    this.position.x += x;
+    this.position.y += y;
     return this;
   }
 
-  rotate(rad: number): this {
-    this.transform.rotate(rad);
-    return this;
-  }
-
-  scale(sx: number, sy = sx): this {
-    this.transform.scale(sx, sy);
-    return this;
-  }
-
-  rotateAround(rad: number, point: Vec2): this {
-    this.transform.rotateAround(rad, point);
-    return this;
-  }
-
-  scaleAround(sx: number, sy: number, point: Vec2): this {
-    this.transform.scaleAround(sx, sy, point);
-    return this;
-  }
-
-  // Reset
+  // Reset transform
   resetTransform(): this {
-    this.transform.reset();
+    this.position.set(0, 0);
+    this.scale.set(1, 1);
+    this.rotation = 0;
+    this.pivot.set(0, 0);
     return this;
   }
 }
