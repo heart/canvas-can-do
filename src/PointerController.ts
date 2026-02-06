@@ -23,6 +23,26 @@ export class PointerController {
   constructor(previewLayer: Container) {
     this.previewLayer = previewLayer;
     this.preview = new PreviewRect(previewLayer);
+    
+    // Add keyboard event listeners
+    window.addEventListener('keydown', this.handleKeyDown.bind(this));
+    window.addEventListener('keyup', this.handleKeyUp.bind(this));
+  }
+
+  private handleKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Shift') {
+      if ('setShiftKey' in this.preview) {
+        (this.preview as any).setShiftKey(true);
+      }
+    }
+  }
+
+  private handleKeyUp(e: KeyboardEvent) {
+    if (e.key === 'Shift') {
+      if ('setShiftKey' in this.preview) {
+        (this.preview as any).setShiftKey(false);
+      }
+    }
   }
 
   setTool(tool: ToolName) {
@@ -34,8 +54,6 @@ export class PointerController {
         this.preview = new PreviewRect(this.previewLayer);
         break;
       case 'circle':
-        this.preview = new PreviewCircle(this.previewLayer);
-        break;
       case 'ellipse':
         this.preview = new PreviewEllipse(this.previewLayer);
         break;
