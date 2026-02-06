@@ -49,14 +49,14 @@ export class RectangleNode extends BaseNode {
 
     // Fill
     if (fill !== undefined) {
-      this.graphics.beginFill(fillColor, opacity);
+      this.graphics.beginFill({ color: fillColor ?? 0xFFFFFF, alpha: opacity });
     }
 
     // Stroke
-    if (stroke) {
+    if (stroke !== undefined) {
       this.graphics.lineStyle({
         width: strokeWidth,
-        color: strokeColor,
+        color: strokeColor ?? 0x000000,
         alpha: opacity,
       });
     }
