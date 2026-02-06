@@ -1,3 +1,4 @@
+import { Container } from 'pixi.js';
 import type { BaseNode } from '../nodes/BaseNode';
 import type { GroupNode } from '../nodes/GroupNode';
 
@@ -23,10 +24,24 @@ export class LayerHierarchy {
     return typeNames[node.type] || 'Layer';
   }
 
-  static getHierarchy(container: BaseNode): LayerNode {
+  static getHierarchy(container: Container): LayerNode {
     const isGroup = (node: BaseNode): node is GroupNode => node.type === 'group';
 
-    const processNode = (node: BaseNode): LayerNode => {
+    const processNode = (node: Container): LayerNode => {
+      // If it's not a BaseNode, create a basic layer node
+      if (!(node instanceof BaseNode)) {
+        return {
+          id: 'root',
+          type: 'root',
+          name: 'Root',
+          visible: node.visible,
+          locked: false,
+          children: node.children
+            .filter((child): child is BaseNode => child instanceof BaseNode)
+            .map(child => processNode(child))
+            .reverse()
+        };
+      }
       const layer: LayerNode = {
         id: node.id,
         type: node.type,
