@@ -51,6 +51,11 @@ export class PointerController {
           detail: { shape: rectangleNode },
         });
         window.dispatchEvent(event);
+
+        // Reset to select tool after creating shape
+        this.setTool('select');
+        // Notify about tool change
+        this.onToolChange?.('select');
       }
     }
   }
