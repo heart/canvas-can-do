@@ -45,10 +45,10 @@ export class PointerController {
             fill: '#ffffff',
             stroke: '#000000',
             strokeWidth: 1,
-            opacity: 1
+            opacity: 1,
           },
           visible: true,
-          locked: false
+          locked: false,
         };
 
         const event = new CustomEvent('shape:created', {
