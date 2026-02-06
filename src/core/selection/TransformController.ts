@@ -83,23 +83,23 @@ export class TransformController {
         let newY = this.startState.y;
 
         // Handle resize based on which handle is being dragged
-        if (this.activeHandle.includes('right')) {
-          newWidth = this.startState.width + dx;
-        } else if (this.activeHandle.includes('left')) {
-          newWidth = this.startState.width - dx;
-          newX = this.startState.x + dx;
+        const [vertical, horizontal] = this.activeHandle.split('-');
+        
+        // Handle horizontal resize
+        if (horizontal === 'left') {
+          newWidth = Math.max(10, this.startState.width - dx);
+          newX = this.startState.x + (this.startState.width - newWidth);
+        } else if (horizontal === 'right') {
+          newWidth = Math.max(10, this.startState.width + dx);
         }
 
-        if (this.activeHandle.includes('bottom')) {
-          newHeight = this.startState.height + dy;
-        } else if (this.activeHandle.includes('top')) {
-          newHeight = this.startState.height - dy;
-          newY = this.startState.y + dy;
+        // Handle vertical resize
+        if (vertical === 'top') {
+          newHeight = Math.max(10, this.startState.height - dy);
+          newY = this.startState.y + (this.startState.height - newHeight);
+        } else if (vertical === 'bottom') {
+          newHeight = Math.max(10, this.startState.height + dy);
         }
-
-        // Ensure minimum size
-        newWidth = Math.max(10, newWidth);
-        newHeight = Math.max(10, newHeight);
 
         // Update node
         this.activeNode.width = newWidth;

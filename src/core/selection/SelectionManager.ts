@@ -60,6 +60,18 @@ export class SelectionManager {
       { x: bounds.x, y: bounds.y + bounds.height / 2, name: 'left' }
     ];
 
+    // Add cursor styles based on handle position
+    const cursorStyles = {
+      'top-left': 'nw-resize',
+      'top': 'n-resize',
+      'top-right': 'ne-resize',
+      'right': 'e-resize',
+      'bottom-right': 'se-resize',
+      'bottom': 's-resize',
+      'bottom-left': 'sw-resize',
+      'left': 'w-resize'
+    };
+
     for (const handle of handles) {
       if (Math.abs(point.x - handle.x) < handleSize &&
           Math.abs(point.y - handle.y) < handleSize) {
