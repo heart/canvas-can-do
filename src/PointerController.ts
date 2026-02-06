@@ -3,6 +3,7 @@ import { PreviewEllipse } from './core/nodes/preview/PreviewEllipse';
 import { PreviewLine } from './core/nodes/preview/PreviewLine';
 import { PreviewStar } from './core/nodes/preview/PreviewStar';
 import { PreviewBase } from './core/nodes/preview/PreviewBase';
+import { SelectionManager } from './core/selection/SelectionManager';
 
 import type { ToolName } from './index';
 import { Container } from 'pixi.js';
@@ -22,9 +23,12 @@ export class PointerController {
   //objectLayer is the layer that we draw the real object here
   private objectLayer: Container;
 
-  constructor(previewLayer: Container, objectLayer: Container) {
+  private selectionManager: SelectionManager;
+
+  constructor(previewLayer: Container, objectLayer: Container, toolsLayer: Container) {
     this.previewLayer = previewLayer;
     this.objectLayer = objectLayer;
+    this.selectionManager = new SelectionManager(toolsLayer);
 
     this.preview = new PreviewRect(previewLayer);
 
@@ -72,7 +76,15 @@ export class PointerController {
   onPointerDown(e: PointerEvent) {
     const point = { x: e.offsetX, y: e.offsetY };
 
-    if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
+    if (this.activeTool === 'select') {
+      const hitObject = this.objectLayer?.children.find(child => {
+        if (child === this.objectLayer) return false;
+        const bounds = child.getBounds();
+        return bounds.containsPoint(point.x, point.y);
+      });
+      
+      this.selectionManager.select(hitObject as BaseNode || null);
+    } else if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
       this.preview.begin(point);
     }
   }
