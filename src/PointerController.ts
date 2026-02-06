@@ -56,6 +56,9 @@ export class PointerController {
 
   setTool(tool: ToolName) {
     this.activeTool = tool;
+    
+    // Clear selection when changing tools
+    this.selectionManager.clear();
 
     // Update preview based on tool
     switch (tool) {
