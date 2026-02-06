@@ -2,6 +2,7 @@ import { PreviewRect } from './core/nodes/preview/PreviewRect';
 import type { ToolName } from './index';
 import type { RectangleNode } from './core/nodes/RectangleNode';
 import { Container } from 'pixi.js';
+import { Transform2D } from './core/math/Transform2D';
 
 export class PointerController {
   private previewRect: PreviewRect;
@@ -37,10 +38,19 @@ export class PointerController {
         const rectangleNode: RectangleNode = {
           type: 'rectangle',
           id: crypto.randomUUID(),
-          x: rect.x,
-          y: rect.y,
           width: rect.w,
           height: rect.h,
+          x: rect.x,
+          y: rect.y,
+          transform: new Transform2D(1, 0, 0, 1, rect.x, rect.y),
+          style: {
+            fill: '#ffffff',
+            stroke: '#000000',
+            strokeWidth: 1,
+            opacity: 1
+          },
+          visible: true,
+          locked: false
         };
 
         const event = new CustomEvent('shape:created', {
