@@ -35,19 +35,32 @@ export class LineTransformController {
     const dy = point.y - this.startPoint.y;
 
     if (this.activeHandle === 'start') {
-      // Adjust the line's position and endpoint
+      // Move the start point by updating position and keeping end point fixed in world space
+      const worldEndX = this.startState.x + this.startState.endX;
+      const worldEndY = this.startState.y + this.startState.endY;
+      
       this.activeNode.position.set(
         this.startState.x + dx,
         this.startState.y + dy
       );
+      
+      // Update end point relative to new position
+      this.activeNode.endX = worldEndX - (this.startState.x + dx);
+      this.activeNode.endY = worldEndY - (this.startState.y + dy);
+      
+      // Start point is always at origin relative to position
       this.activeNode.startX = 0;
       this.activeNode.startY = 0;
-      this.activeNode.endX = this.startState.endX - dx;
-      this.activeNode.endY = this.startState.endY - dy;
     } else if (this.activeHandle === 'end') {
-      // Update end point
+      // Simply update end point relative to current position
       this.activeNode.endX = this.startState.endX + dx;
       this.activeNode.endY = this.startState.endY + dy;
+    } else if (this.activeHandle === 'move') {
+      // Move the entire line by updating position only
+      this.activeNode.position.set(
+        this.startState.x + dx,
+        this.startState.y + dy
+      );
     }
   }
 
