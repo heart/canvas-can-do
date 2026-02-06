@@ -220,12 +220,7 @@ export class PointerController {
       }
 
       // If no handle hit, check for object selection
-      const hitObject = [...(this.objectLayer?.children || [])].reverse().find((child) => {
-        if (child === this.objectLayer) return false;
-        const bounds = child.getBounds();
-        // bounds are global; use global point
-        return bounds.containsPoint(globalPoint.x, globalPoint.y);
-      });
+      const hitObject = this.findHitObject(globalPoint);
 
       this.selectionManager.select((hitObject as BaseNode) || null);
       if (hitObject) {
@@ -261,11 +256,7 @@ export class PointerController {
       this.selectionManager.updateTransform(point);
 
       // Otherwise show hover state - search from top to bottom of z-order
-      const hitObject = [...(this.objectLayer?.children || [])].reverse().find((child) => {
-        if (child === this.objectLayer) return false;
-        const bounds = child.getBounds();
-        return bounds.containsPoint(globalPoint.x, globalPoint.y);
-      });
+      const hitObject = this.findHitObject(globalPoint);
 
       if (hitObject) {
         const bounds = hitObject.getBounds();
@@ -452,5 +443,37 @@ export class PointerController {
     const globalPoint = new Point(screenX, screenY);
     // Map through world transform to local space (handles scale/position)
     return this.world.toLocal(globalPoint);
+  }
+
+  private findHitObject(globalPoint: Point): Container | undefined {
+    const children = [...(this.objectLayer?.children || [])].reverse();
+    const tolerance = 10;
+
+    return children.find((child) => {
+      if (child === this.objectLayer) return false;
+      if ((child as any).type === 'line') {
+        const line = child as any as LineNode;
+        const startX = line.x + line.startX;
+        const startY = line.y + line.startY;
+        const endX = line.x + line.endX;
+        const endY = line.y + line.endY;
+        const len = Math.hypot(endX - startX, endY - startY) || 1;
+        const dist =
+          Math.abs(
+            (endY - startY) * globalPoint.x -
+              (endX - startX) * globalPoint.y +
+              endX * startY -
+              endY * startX
+          ) / len;
+        const minX = Math.min(startX, endX) - tolerance;
+        const maxX = Math.max(startX, endX) + tolerance;
+        const minY = Math.min(startY, endY) - tolerance;
+        const maxY = Math.max(startY, endY) + tolerance;
+        return dist <= tolerance && globalPoint.x >= minX && globalPoint.x <= maxX && globalPoint.y >= minY && globalPoint.y <= maxY;
+      }
+
+      const bounds = child.getBounds();
+      return bounds.containsPoint(globalPoint.x, globalPoint.y);
+    });
   }
 }
