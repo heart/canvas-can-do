@@ -67,6 +67,7 @@ export class LayerHierarchy {
 // Custom event for layer hierarchy changes
 export type LayerHierarchyChangedEvent = CustomEvent<{
   hierarchy: LayerNode;
+  selectedIds?: string[];
 }>;
 
 declare global {

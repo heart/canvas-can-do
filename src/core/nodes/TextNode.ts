@@ -66,6 +66,19 @@ export class TextNode extends BaseNode {
     return this;
   }
 
+  getProps() {
+    return [
+      ...super.getProps(),
+      {
+        name: 'Text',
+        key: 'text',
+        type: 'string',
+        value: this.text,
+        desc: 'Text content',
+      },
+    ];
+  }
+
   clone(offsetX = 0, offsetY = 0): TextNode {
     return new TextNode({
       text: this.text,

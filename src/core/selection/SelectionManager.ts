@@ -5,6 +5,7 @@ import { LineTransformController } from './LineTransformController';
 import type { LineNode } from '../nodes/LineNode';
 import { GroupNode } from '../nodes/GroupNode';
 import { LayerHierarchy } from '../layers/LayerHierarchy';
+import type { InspectableNode } from '../nodes';
 
 export class SelectionManager {
   private selectedNodes: Set<BaseNode> = new Set();
@@ -44,6 +45,7 @@ export class SelectionManager {
       this.transformController.updateTransform(point);
     }
     this.updateSelectionVisuals();
+    this.dispatchPropertiesChanged();
   }
 
   endTransform() {
@@ -55,6 +57,7 @@ export class SelectionManager {
       this.transformController.endTransform();
     }
     this.updateSelectionVisuals();
+    this.dispatchPropertiesChanged();
   }
 
   hitTestHandle(point: Point): string | null {
@@ -173,6 +176,7 @@ export class SelectionManager {
 
     this.updateSelectionVisuals();
     this.dispatchLayerChanged();
+    this.dispatchPropertiesChanged();
   }
 
   createGroup() {
@@ -215,9 +219,13 @@ export class SelectionManager {
 
     // Dispatch layer hierarchy changed event
     const event = new CustomEvent('layer:changed', {
-      detail: { hierarchy: LayerHierarchy.getHierarchy(parent) },
+      detail: {
+        hierarchy: LayerHierarchy.getHierarchy(parent),
+        selectedIds: Array.from(this.selectedNodes).map((n) => n.id),
+      },
     });
     window.dispatchEvent(event);
+    this.dispatchPropertiesChanged();
 
     return group;
   }
@@ -262,10 +270,14 @@ export class SelectionManager {
     // Dispatch layer hierarchy changed event
     if (parent) {
       const event = new CustomEvent('layer:changed', {
-        detail: { hierarchy: LayerHierarchy.getHierarchy(parent) },
+        detail: {
+          hierarchy: LayerHierarchy.getHierarchy(parent),
+          selectedIds: Array.from(this.selectedNodes).map((n) => n.id),
+        },
       });
       window.dispatchEvent(event);
     }
+    this.dispatchPropertiesChanged();
 
     return children;
   }
@@ -333,7 +345,6 @@ export class SelectionManager {
       }
     });
     this.clear();
-    if (removed.length) this.dispatchLayerChanged();
     return removed;
   }
 
@@ -341,6 +352,7 @@ export class SelectionManager {
     this.selectedNodes.clear();
     this.updateSelectionVisuals();
     this.dispatchLayerChanged();
+    this.dispatchPropertiesChanged();
   }
 
   nudgeSelected(dx: number, dy: number): boolean {
@@ -351,6 +363,7 @@ export class SelectionManager {
     });
     this.updateSelectionVisuals();
     this.dispatchLayerChanged();
+    this.dispatchPropertiesChanged();
     return true;
   }
 
@@ -462,11 +475,23 @@ export class SelectionManager {
     const parent = this.selectedNodes.size ? Array.from(this.selectedNodes)[0].parent : null;
     if (parent) {
       const hierarchy = LayerHierarchy.getHierarchy(parent);
+      const selectedIds = Array.from(this.selectedNodes).map((n) => n.id);
       window.dispatchEvent(
         new CustomEvent('layer:changed', {
-          detail: { hierarchy },
+          detail: { hierarchy, selectedIds },
         })
       );
     }
+  }
+
+  private dispatchPropertiesChanged() {
+    const nodes: InspectableNode[] = Array.from(this.selectedNodes)
+      .map((n) => (typeof (n as any).getInspectable === 'function' ? (n as any).getInspectable() : null))
+      .filter((n): n is InspectableNode => n !== null);
+
+    const event = new CustomEvent('properties:changed', {
+      detail: { nodes },
+    });
+    window.dispatchEvent(event);
   }
 }

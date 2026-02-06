@@ -57,7 +57,7 @@ window.addEventListener('tool:changed', ((e: CustomEvent<{ tool: ToolName }>) =>
 }) as EventListener);
 
 // Listen for tool changes from the app
-window.addEventListener('layer:changed', ((e: CustomEvent<{ hierarchy: LayerNode }>) => {
+window.addEventListener('layer:changed', ((e: CustomEvent<{ hierarchy: LayerNode; selectedIds?: string[] }>) => {
   updateLayer(e.detail.hierarchy);
 }) as EventListener);
 

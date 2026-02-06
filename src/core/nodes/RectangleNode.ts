@@ -1,6 +1,6 @@
 import { Graphics } from 'pixi.js';
 import { BaseNode } from './BaseNode';
-import type { Style } from './BaseNode';
+import type { Style, NodePropertyDescriptor } from './BaseNode';
 
 export class RectangleNode extends BaseNode {
   readonly type = 'rectangle' as const;
@@ -83,6 +83,20 @@ export class RectangleNode extends BaseNode {
     this.style = { ...this.style, ...style };
     this.redraw();
     return this;
+  }
+
+  getProps(): NodePropertyDescriptor[] {
+    return [
+      ...super.getProps(),
+      {
+        name: 'Corner Radius',
+        key: 'cornerRadius',
+        type: 'float',
+        value: this.cornerRadius ?? 0,
+        desc: 'Rounded corner radius',
+        min: 0,
+      },
+    ];
   }
 
   clone(offsetX = 0, offsetY = 0): RectangleNode {

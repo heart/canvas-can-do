@@ -92,6 +92,20 @@ export class LineNode extends BaseNode {
     this.redraw();
   }
 
+  getProps() {
+    const startX = this.position.x + this.startX;
+    const startY = this.position.y + this.startY;
+    const endX = this.position.x + this.endX;
+    const endY = this.position.y + this.endY;
+    return [
+      ...super.getProps(),
+      { name: 'Start X', key: 'startX', type: 'float', value: startX, desc: 'Start X position' },
+      { name: 'Start Y', key: 'startY', type: 'float', value: startY, desc: 'Start Y position' },
+      { name: 'End X', key: 'endX', type: 'float', value: endX, desc: 'End X position' },
+      { name: 'End Y', key: 'endY', type: 'float', value: endY, desc: 'End Y position' },
+    ];
+  }
+
   clone(offsetX = 0, offsetY = 0): LineNode {
     const startX = this.position.x + this.startX + offsetX;
     const startY = this.position.y + this.startY + offsetY;

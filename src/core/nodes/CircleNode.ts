@@ -1,6 +1,6 @@
 import { Graphics } from 'pixi.js';
 import { BaseNode } from './BaseNode';
-import type { Style } from './BaseNode';
+import type { Style, NodePropertyDescriptor } from './BaseNode';
 
 export class CircleNode extends BaseNode {
   readonly type = 'circle' as const;
@@ -56,7 +56,7 @@ export class CircleNode extends BaseNode {
     if (fill !== undefined) {
       this.graphics.fill({
         color: fillColor ?? 0xffffff,
-        alpha: opacity
+        alpha: opacity,
       });
     }
 
@@ -65,7 +65,7 @@ export class CircleNode extends BaseNode {
       this.graphics.stroke({
         width: strokeWidth,
         color: strokeColor ?? 0x000000,
-        alpha: opacity
+        alpha: opacity,
       });
     }
   }
@@ -74,5 +74,19 @@ export class CircleNode extends BaseNode {
     this.style = { ...this.style, ...style };
     this.redraw();
     return this;
+  }
+
+  getProps(): NodePropertyDescriptor[] {
+    return [
+      ...super.getProps(),
+      {
+        name: 'Radius',
+        key: 'radius',
+        type: 'float',
+        value: this.radius,
+        desc: 'Circle radius',
+        min: 0,
+      },
+    ];
   }
 }

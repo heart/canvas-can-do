@@ -2,6 +2,7 @@ import { Application, Container } from 'pixi.js';
 import { PointerController } from './PointerController';
 import type { ShapeCreatedEvent } from './events';
 import { LayerHierarchy } from './core/layers/LayerHierarchy';
+import type { BaseNode, InspectableNode } from './core/nodes';
 
 export const version = '0.0.0';
 
@@ -14,6 +15,11 @@ export type ToolName =
   | 'ellipse'
   | 'star'
   | 'pan';
+
+export interface NodePropUpdate {
+  id: string;
+  props: Record<string, string | number | boolean | null>;
+}
 
 export const TOOL_CURSOR: Record<ToolName, string | null> = {
   select: null,
@@ -89,8 +95,8 @@ export class CCDApp {
       this.world
     );
 
-    // Listen for shape creation events
-    window.addEventListener('shape:created', ((e: ShapeCreatedEvent) => {
+    // Listen for shape creation events from pointer controller
+    this.pointerController.addEventListener('shape:created', ((e: ShapeCreatedEvent) => {
       const shape = e.detail.shape;
       this.objectLayer.addChild(shape);
       this.dispatchLayerHierarchyChanged();
@@ -206,15 +212,159 @@ export class CCDApp {
     const event = new CustomEvent('tool:changed', {
       detail: { tool: toolName },
     });
-    window.dispatchEvent(event);
+    this.dispatchOnHost(event);
   }
 
   dispatchLayerHierarchyChanged() {
     const hierarchy = LayerHierarchy.getHierarchy(this.objectLayer);
     const event = new CustomEvent('layer:changed', {
-      detail: { hierarchy },
+      detail: { hierarchy, selectedIds: [] },
     });
-    window.dispatchEvent(event);
+    this.dispatchOnHost(event);
+  }
+
+  /**
+   * Apply property updates to one or more nodes by id.
+   * Pass the ids/props you received from `layer:changed` or `properties:changed`.
+   */
+  applyNodeProperties(update: NodePropUpdate | NodePropUpdate[]): void {
+    const updates = Array.isArray(update) ? update : [update];
+    const touchedNodes: BaseNode[] = [];
+
+    updates.forEach(({ id, props }) => {
+      const node = this.findNodeById(this.objectLayer, id);
+      if (!node) return;
+
+      Object.entries(props).forEach(([key, value]) => {
+        switch (key) {
+          case 'name':
+            node.name = value as string;
+            break;
+          case 'x':
+            node.position.x = Number(value);
+            break;
+          case 'y':
+            node.position.y = Number(value);
+            break;
+          case 'width':
+            node.width = Number(value);
+            break;
+          case 'height':
+            node.height = Number(value);
+            break;
+          case 'scaleX':
+            node.scale.x = Number(value);
+            break;
+          case 'scaleY':
+            node.scale.y = Number(value);
+            break;
+          case 'rotation':
+            node.rotation = Number(value);
+            break;
+          case 'visible':
+            node.visible = Boolean(value);
+            break;
+          case 'locked':
+            node.locked = Boolean(value);
+            break;
+          case 'fill':
+          case 'stroke':
+          case 'strokeWidth':
+          case 'opacity':
+            this.applyStyle(node, key, value);
+            break;
+          case 'radius':
+            if ('radius' in node) {
+              (node as any).radius = Number(value);
+              node.width = Number(value) * 2;
+              node.height = Number(value) * 2;
+              (node as any).redraw?.();
+            }
+            break;
+          case 'cornerRadius':
+            if ('cornerRadius' in node) {
+              (node as any).cornerRadius = Number(value);
+              (node as any).redraw?.();
+            }
+            break;
+          case 'text':
+            if ('setText' in node) {
+              (node as any).setText(value as string);
+            }
+            break;
+          case 'points':
+          case 'innerRadius':
+          case 'outerRadius':
+            if (node.type === 'star') {
+              if (key === 'points') (node as any).points = Number(value);
+              if (key === 'innerRadius') (node as any).innerRadius = Number(value);
+              if (key === 'outerRadius') {
+                (node as any).outerRadius = Number(value);
+                node.width = Number(value) * 2;
+                node.height = Number(value) * 2;
+              }
+              (node as any).redraw?.();
+            }
+            break;
+          case 'startX':
+          case 'startY':
+          case 'endX':
+          case 'endY':
+            if (node.type === 'line') {
+              // values are absolute; store relative to node position
+              if (key === 'startX') (node as any).startX = Number(value) - node.position.x;
+              if (key === 'startY') (node as any).startY = Number(value) - node.position.y;
+              if (key === 'endX') (node as any).endX = Number(value) - node.position.x;
+              if (key === 'endY') (node as any).endY = Number(value) - node.position.y;
+              (node as any).refresh?.();
+              (node as any).redraw?.();
+            }
+            break;
+        }
+      });
+
+      touchedNodes.push(node);
+    });
+
+    if (touchedNodes.length) {
+      // Let listeners refresh panels
+      const nodes: InspectableNode[] = touchedNodes
+        .map((n) => (typeof (n as any).getInspectable === 'function' ? (n as any).getInspectable() : null))
+        .filter((n): n is InspectableNode => n !== null);
+
+      const propEvent = new CustomEvent('properties:changed', { detail: { nodes } });
+      this.dispatchOnHost(propEvent);
+      this.dispatchLayerHierarchyChanged();
+    }
+  }
+
+  private applyStyle(node: BaseNode, key: string, value: any) {
+    const styleUpdate: any = { [key]: value };
+    if ('setStyle' in node && typeof (node as any).setStyle === 'function') {
+      (node as any).setStyle(styleUpdate);
+    } else {
+      node.style = { ...node.style, ...styleUpdate };
+      (node as any).redraw?.();
+    }
+  }
+
+  private findNodeById(container: Container, id: string): BaseNode | null {
+    for (const child of container.children) {
+      if ((child as any).id === id) return child as BaseNode;
+      if (child instanceof Container) {
+        const found = this.findNodeById(child, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  private dispatchOnHost(event: Event) {
+    if (this.host) {
+      this.host.dispatchEvent(event);
+    } else {
+      window.dispatchEvent(event);
+    }
   }
 
   destroy() {

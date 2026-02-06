@@ -32,6 +32,7 @@ export class PointerController {
   private lastPan?: Point;
   private app?: Application;
   private world?: Container;
+  private eventTarget = new EventTarget();
 
   constructor(
     previewLayer: Container,
@@ -50,6 +51,18 @@ export class PointerController {
     this.selectionManager = new SelectionManager(toolsLayer);
 
     this.preview = new PreviewRect(previewLayer);
+  }
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) {
+    this.eventTarget.addEventListener(type, listener, options);
+  }
+
+  removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) {
+    this.eventTarget.removeEventListener(type, listener, options);
+  }
+
+  dispatchEvent(event: Event): boolean {
+    return this.eventTarget.dispatchEvent(event);
   }
 
   handleKeyDown(e: KeyboardEvent) {
@@ -405,7 +418,7 @@ export class PointerController {
       const event = new CustomEvent('shape:created', {
         detail: { shape },
       });
-      window.dispatchEvent(event);
+      this.dispatchEvent(event);
       this.onLayerChanged();
     }
   }

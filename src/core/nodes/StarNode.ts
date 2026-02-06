@@ -94,6 +94,37 @@ export class StarNode extends BaseNode {
     return this;
   }
 
+  getProps() {
+    return [
+      ...super.getProps(),
+      {
+        name: 'Points',
+        key: 'points',
+        type: 'int',
+        value: this.points,
+        desc: 'Number of star points',
+        min: 2,
+        step: 1,
+      },
+      {
+        name: 'Inner Radius',
+        key: 'innerRadius',
+        type: 'float',
+        value: this.innerRadius,
+        desc: 'Inner radius',
+        min: 0,
+      },
+      {
+        name: 'Outer Radius',
+        key: 'outerRadius',
+        type: 'float',
+        value: this.outerRadius,
+        desc: 'Outer radius',
+        min: 0,
+      },
+    ];
+  }
+
   clone(offsetX = 0, offsetY = 0): StarNode {
     return new StarNode({
       points: this.points,
