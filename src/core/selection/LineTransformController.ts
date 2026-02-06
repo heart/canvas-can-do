@@ -35,10 +35,6 @@ export class LineTransformController {
     const dy = point.y - this.startPoint.y;
 
     if (this.activeHandle === 'start') {
-      // Update start point
-      const newStartX = this.startState.startX + dx;
-      const newStartY = this.startState.startY + dy;
-      
       // Adjust the line's position and endpoint
       this.activeNode.position.set(
         this.startState.x + dx,
