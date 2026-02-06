@@ -40,8 +40,6 @@ export class PointerController {
           id: crypto.randomUUID(),
           width: rect.w,
           height: rect.h,
-          x: rect.x,
-          y: rect.y,
           transform: new Transform2D(1, 0, 0, 1, rect.x, rect.y),
           style: {
             fill: '#ffffff',
