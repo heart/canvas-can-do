@@ -1,4 +1,4 @@
-import type { RectangleNode } from './core/nodes/rectangle';
+import type { RectangleNode } from './core/nodes/RectangleNode';
 
 export type ShapeCreatedEvent = CustomEvent<{
   shape: RectangleNode;
