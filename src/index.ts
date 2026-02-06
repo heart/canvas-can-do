@@ -102,8 +102,12 @@ export class CCDApp {
   }
 
   useTool(toolName: ToolName) {
-    this.activeTool = toolName;
+    this.pointerController?.setTool(toolName);
+    const toolCursor = TOOL_CURSOR[toolName];
+    this.setCursor(toolCursor);
+  }
 
+  onToolChange(toolName: ToolName) {
     const toolCursor = TOOL_CURSOR[toolName];
     this.setCursor(toolCursor);
   }
