@@ -1,6 +1,7 @@
 import { Application, Container } from 'pixi.js';
 import { PointerController } from './PointerController';
 import type { ShapeCreatedEvent } from './events';
+import { LayerHierarchy } from './core/layers/LayerHierarchy';
 
 export const version = '0.0.0';
 
@@ -77,7 +78,8 @@ export class CCDApp {
     this.pointerController = new PointerController(
       this.previewLayer,
       this.objectLayer,
-      this.toolsLayer
+      this.toolsLayer,
+      this.dispatchLayerHierarchyChanged.bind(this)
     );
 
     // Listen for shape creation events
@@ -139,7 +141,7 @@ export class CCDApp {
   dispatchLayerHierarchyChanged() {
     const hierarchy = LayerHierarchy.getHierarchy(this.objectLayer);
     const event = new CustomEvent('layer:changed', {
-      detail: { hierarchy }
+      detail: { hierarchy },
     });
     window.dispatchEvent(event);
   }

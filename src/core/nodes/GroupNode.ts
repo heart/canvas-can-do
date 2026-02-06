@@ -47,6 +47,19 @@ export class GroupNode extends BaseNode {
     return this.getBounds().height;
   }
 
+  // Setting width/height scales the group so children maintain relative layout.
+  set width(value: number) {
+    const current = this.getBounds().width || 1;
+    const factor = value / current;
+    this.scale.x *= factor;
+  }
+
+  set height(value: number) {
+    const current = this.getBounds().height || 1;
+    const factor = value / current;
+    this.scale.y *= factor;
+  }
+
   clone(offsetX = 0, offsetY = 0): GroupNode {
     const clonedChildren = this.children
       .filter((c): c is BaseNode => c instanceof BaseNode)

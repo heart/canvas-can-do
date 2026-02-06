@@ -1,6 +1,6 @@
 import { Container } from 'pixi.js';
-import type { BaseNode } from '../nodes/BaseNode';
-import type { GroupNode } from '../nodes/GroupNode';
+import { BaseNode } from '../nodes/BaseNode';
+import { GroupNode } from '../nodes/GroupNode';
 
 export interface LayerNode {
   id: string;
@@ -19,7 +19,7 @@ export class LayerHierarchy {
       line: 'Line',
       star: 'Star',
       text: 'Text',
-      group: 'Group'
+      group: 'Group',
     };
     return typeNames[node.type] || 'Layer';
   }
@@ -38,8 +38,8 @@ export class LayerHierarchy {
           locked: false,
           children: node.children
             .filter((child): child is BaseNode => child instanceof BaseNode)
-            .map(child => processNode(child))
-            .reverse()
+            .map((child) => processNode(child))
+            .reverse(),
         };
       }
       const layer: LayerNode = {
@@ -47,13 +47,13 @@ export class LayerHierarchy {
         type: node.type,
         name: LayerHierarchy.generateLayerName(node),
         visible: node.visible,
-        locked: node.locked
+        locked: node.locked,
       };
 
       if (isGroup(node) && node.children.length > 0) {
         layer.children = node.children
           .filter((child): child is BaseNode => child instanceof BaseNode)
-          .map(child => processNode(child))
+          .map((child) => processNode(child))
           .reverse(); // Reverse to match visual stacking order
       }
 

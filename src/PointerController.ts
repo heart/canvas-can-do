@@ -26,10 +26,17 @@ export class PointerController {
 
   private selectionManager: SelectionManager;
   private clipboard: BaseNode[] = [];
+  private onLayerChanged: () => void;
 
-  constructor(previewLayer: Container, objectLayer: Container, toolsLayer: Container) {
+  constructor(
+    previewLayer: Container,
+    objectLayer: Container,
+    toolsLayer: Container,
+    onLayerChanged: () => void
+  ) {
     this.previewLayer = previewLayer;
     this.objectLayer = objectLayer;
+    this.onLayerChanged = onLayerChanged;
 
     this.selectionManager = new SelectionManager(toolsLayer);
 
@@ -91,6 +98,7 @@ export class PointerController {
         if (!this.objectLayer.children.includes(group)) {
           this.objectLayer.addChild(group);
         }
+        this.onLayerChanged();
       }
     }
 
@@ -104,6 +112,7 @@ export class PointerController {
           this.objectLayer.addChild(child);
         }
       });
+      if (ungrouped.length) this.onLayerChanged();
     }
   }
 
@@ -169,6 +178,9 @@ export class PointerController {
         });
 
       this.selectionManager.select((hitObject as BaseNode) || null);
+      if (hitObject) {
+        this.onLayerChanged();
+      }
 
       // Begin move transform when clicking on a selected object body
       if (hitObject && this.selectionManager.getSelectedNodes().length === 1) {
@@ -328,6 +340,7 @@ export class PointerController {
         detail: { shape },
       });
       window.dispatchEvent(event);
+      this.onLayerChanged();
     }
   }
 

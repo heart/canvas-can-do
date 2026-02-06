@@ -4,6 +4,7 @@ import { TransformController } from './TransformController';
 import { LineTransformController } from './LineTransformController';
 import type { LineNode } from '../nodes/LineNode';
 import { GroupNode } from '../nodes/GroupNode';
+import { LayerHierarchy } from '../layers/LayerHierarchy';
 
 export class SelectionManager {
   private selectedNodes: Set<BaseNode> = new Set();
@@ -61,6 +62,7 @@ export class SelectionManager {
     if (this.selectedNodes.size > 1) return null; // no handles for multi-select
 
     const node = Array.from(this.selectedNodes)[0];
+    // groups now allow full handles
 
     if (node.type === 'line') {
       const lineNode = node as LineNode;
@@ -162,6 +164,7 @@ export class SelectionManager {
     }
 
     this.updateSelectionVisuals();
+    this.dispatchLayerChanged();
   }
 
   createGroup() {
@@ -216,12 +219,20 @@ export class SelectionManager {
 
     const parent = node.parent as Container | null;
     const groupIndex = parent ? parent.getChildIndex(node) : -1;
+    const gScaleX = node.scale.x;
+    const gScaleY = node.scale.y;
+    const gRotation = node.rotation;
 
     // Move children to world (parent) space
     const children = [...node.children] as BaseNode[];
     children.forEach(child => {
       const worldPos = node.toGlobal(child.position);
+      // Bake group transform into child
       child.position.copyFrom(worldPos);
+      child.scale.set(child.scale.x * gScaleX, child.scale.y * gScaleY);
+      child.rotation += gRotation;
+      // Normalize scale back to 1: bake scale into intrinsic size
+      this.normalizeNodeScale(child);
       node.removeChild(child);
     });
 
@@ -271,6 +282,15 @@ export class SelectionManager {
     };
   }
 
+  private normalizeNodeScale(node: BaseNode) {
+    if (node.scale.x === 1 && node.scale.y === 1) return;
+    const sx = node.scale.x;
+    const sy = node.scale.y;
+    node.width = node.width * sx;
+    node.height = node.height * sy;
+    node.scale.set(1, 1);
+  }
+
   isSelected(node: BaseNode): boolean {
     return this.selectedNodes.has(node);
   }
@@ -288,12 +308,14 @@ export class SelectionManager {
       }
     });
     this.clear();
+    if (removed.length) this.dispatchLayerChanged();
     return removed;
   }
 
   clear() {
     this.selectedNodes.clear();
     this.updateSelectionVisuals();
+    this.dispatchLayerChanged();
   }
 
   private updateSelectionVisuals() {
@@ -383,6 +405,18 @@ export class SelectionManager {
         this.selectionGraphics.fill({ color: 0xffffff });
         this.selectionGraphics.stroke({ color: 0x0099ff, width: 1 });
       }
+    }
+  }
+
+  private dispatchLayerChanged() {
+    const parent = this.selectedNodes.size ? Array.from(this.selectedNodes)[0].parent : null;
+    if (parent) {
+      const hierarchy = LayerHierarchy.getHierarchy(parent);
+      window.dispatchEvent(
+        new CustomEvent('layer:changed', {
+          detail: { hierarchy },
+        })
+      );
     }
   }
 }
