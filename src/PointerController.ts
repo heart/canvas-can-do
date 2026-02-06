@@ -9,40 +9,55 @@ import { StarNode } from './core/nodes/StarNode';
 import { TextNode } from './core/nodes/TextNode';
 
 export class PointerController {
-  private previewRect: PreviewRect;
+  private preview: PreviewBase;
   private activeTool: ToolName = 'select';
   private onToolChange?: (tool: ToolName) => void;
 
-  constructor(previewLayer: Container) {
-    this.previewRect = new PreviewRect(previewLayer);
+  constructor(private previewLayer: Container) {
+    this.preview = new PreviewRect(previewLayer);
   }
 
   setTool(tool: ToolName) {
     this.activeTool = tool;
+    
+    // Update preview based on tool
+    switch (tool) {
+      case 'rectangle':
+        this.preview = new PreviewRect(this.previewLayer);
+        break;
+      case 'circle':
+        this.preview = new PreviewCircle(this.previewLayer);
+        break;
+      case 'ellipse':
+        this.preview = new PreviewEllipse(this.previewLayer);
+        break;
+      case 'line':
+        this.preview = new PreviewLine(this.previewLayer);
+        break;
+      case 'star':
+        this.preview = new PreviewStar(this.previewLayer);
+        break;
+    }
   }
 
   onPointerDown(e: PointerEvent) {
     const point = { x: e.offsetX, y: e.offsetY };
     
-    if (this.activeTool === 'rectangle' || 
-        this.activeTool === 'circle' || 
-        this.activeTool === 'ellipse') {
-      this.previewRect.begin(point);
+    if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
+      this.preview.begin(point);
     }
   }
 
   onPointerMove(e: PointerEvent) {
     const point = { x: e.offsetX, y: e.offsetY };
     
-    if (this.activeTool === 'rectangle' || 
-        this.activeTool === 'circle' || 
-        this.activeTool === 'ellipse') {
-      this.previewRect.update(point);
+    if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
+      this.preview.update(point);
     }
   }
 
   onPointerUp(e: PointerEvent) {
-    const rect = this.previewRect.end();
+    const rect = this.preview.end();
     if (!rect) return;
 
     let shape;
@@ -134,7 +149,7 @@ export class PointerController {
   }
 
   cancel() {
-    this.previewRect.cancel();
+    this.preview.cancel();
     // Reset to select tool when canceling
     this.setTool('select');
     // Notify about tool change through handler
