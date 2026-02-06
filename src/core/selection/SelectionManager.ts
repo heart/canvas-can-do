@@ -352,10 +352,17 @@ export class SelectionManager {
     // Multi-select: draw a single bounding box, no handles/rotation
     if (this.selectedNodes.size > 1) {
       const bounds = this.getSelectionBounds();
+      // Convert global bounds to the selectionGraphics' parent space (world/tools)
+      const parent = this.selectionGraphics.parent as Container;
+      const tl = parent.toLocal(new Point(bounds.x, bounds.y));
+      const br = parent.toLocal(new Point(bounds.x + bounds.width, bounds.y + bounds.height));
+      const w = br.x - tl.x;
+      const h = br.y - tl.y;
+
       this.selectionGraphics.position.set(0, 0);
       this.selectionGraphics.rotation = 0;
       this.selectionGraphics.pivot.set(0, 0);
-      this.selectionGraphics.rect(bounds.x, bounds.y, bounds.width, bounds.height);
+      this.selectionGraphics.rect(tl.x, tl.y, w, h);
       this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 1 });
       return;
     }
