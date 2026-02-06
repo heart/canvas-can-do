@@ -62,6 +62,11 @@ export class BaseNode extends Container {
 
   set width(value: number) {
     this._width = value;
+    // Redraw visuals when dimensions change (after graphics exist)
+    const self: any = this as any;
+    if (typeof self.redraw === 'function' && self.graphics) {
+      self.redraw();
+    }
   }
 
   get height(): number {
@@ -70,6 +75,11 @@ export class BaseNode extends Container {
 
   set height(value: number) {
     this._height = value;
+    // Redraw visuals when dimensions change (after graphics exist)
+    const self: any = this as any;
+    if (typeof self.redraw === 'function' && self.graphics) {
+      self.redraw();
+    }
   }
 
   // Transform convenience methods

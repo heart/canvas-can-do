@@ -7,7 +7,7 @@ import { SelectionManager } from './core/selection/SelectionManager';
 import { BaseNode } from './core/nodes/BaseNode';
 
 import type { ToolName } from './index';
-import { Container } from 'pixi.js';
+import { Container, Point } from 'pixi.js';
 import { RectangleNode } from './core/nodes/RectangleNode';
 import { EllipseNode } from './core/nodes/EllipseNode';
 import { LineNode } from './core/nodes/LineNode';
@@ -29,6 +29,7 @@ export class PointerController {
   constructor(previewLayer: Container, objectLayer: Container, toolsLayer: Container) {
     this.previewLayer = previewLayer;
     this.objectLayer = objectLayer;
+
     this.selectionManager = new SelectionManager(toolsLayer);
 
     this.preview = new PreviewRect(previewLayer);
@@ -56,7 +57,7 @@ export class PointerController {
 
   setTool(tool: ToolName) {
     this.activeTool = tool;
-    
+
     // Clear selection when changing tools
     this.selectionManager.clear();
 
@@ -78,12 +79,12 @@ export class PointerController {
   }
 
   onPointerDown(e: PointerEvent) {
-    const point = { x: e.offsetX, y: e.offsetY };
+    const point = new Point(e.offsetX, e.offsetY);
 
     if (this.activeTool === 'select') {
       // Check if we hit a transform handle first
       const handle = this.selectionManager.hitTestHandle(point);
-      
+
       if (handle) {
         this.selectionManager.startTransform(point, handle);
         return;
@@ -97,13 +98,18 @@ export class PointerController {
       });
 
       this.selectionManager.select((hitObject as BaseNode) || null);
+
+      // Begin move transform when clicking on a selected object body
+      if (hitObject) {
+        this.selectionManager.startTransform(point, 'move');
+      }
     } else if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
       this.preview.begin(point);
     }
   }
 
   onPointerMove(e: PointerEvent) {
-    const point = { x: e.offsetX, y: e.offsetY };
+    const point = new Point(e.offsetX, e.offsetY);
 
     if (this.activeTool === 'select') {
       // Update transform if in progress
@@ -177,18 +183,13 @@ export class PointerController {
       case 'ellipse':
         let width = rect.w;
         let height = rect.h;
-        let x = rect.x + rect.w / 2;
-        let y = rect.y + rect.h / 2;
+        let x = rect.x;
+        let y = rect.y;
 
         if (e.shiftKey) {
           const size = Math.max(rect.w, rect.h);
           width = size;
           height = size;
-          if (rect.w < rect.h) {
-            x = this.preview.start.x + (this.preview.last.x - this.preview.start.x) / 2;
-          } else {
-            y = this.preview.start.y + (this.preview.last.y - this.preview.start.y) / 2;
-          }
         }
 
         shape = new EllipseNode({
@@ -233,8 +234,8 @@ export class PointerController {
           points: 5,
           innerRadius: size * 0.4,
           outerRadius: size * 0.8,
-          x: rect.x + rect.w / 2,
-          y: rect.y + rect.h / 2,
+          x: rect.x,
+          y: rect.y,
           style: defaultStyle,
         });
         break;

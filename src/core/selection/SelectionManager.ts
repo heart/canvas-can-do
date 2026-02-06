@@ -55,7 +55,7 @@ export class SelectionManager {
     if (this.selectedNodes.size === 0) return null;
 
     const node = Array.from(this.selectedNodes)[0];
-    
+
     if (node.type === 'line') {
       const lineNode = node as LineNode;
       const handleSize = 12;
@@ -63,26 +63,23 @@ export class SelectionManager {
       // Check start point handle
       const startX = lineNode.x + lineNode.startX;
       const startY = lineNode.y + lineNode.startY;
-      if (Math.abs(point.x - startX) < handleSize &&
-          Math.abs(point.y - startY) < handleSize) {
+      if (Math.abs(point.x - startX) < handleSize && Math.abs(point.y - startY) < handleSize) {
         return 'start';
       }
 
       // Check end point handle
       const endX = lineNode.x + lineNode.endX;
       const endY = lineNode.y + lineNode.endY;
-      if (Math.abs(point.x - endX) < handleSize &&
-          Math.abs(point.y - endY) < handleSize) {
+      if (Math.abs(point.x - endX) < handleSize && Math.abs(point.y - endY) < handleSize) {
         return 'end';
       }
 
       // Check if point is near the line for moving
-      const lineLength = Math.sqrt(
-        Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)
-      );
-      const distance = Math.abs(
-        (endY - startY) * point.x - (endX - startX) * point.y + endX * startY - endY * startX
-      ) / lineLength;
+      const lineLength = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+      const distance =
+        Math.abs(
+          (endY - startY) * point.x - (endX - startX) * point.y + endX * startY - endY * startX
+        ) / lineLength;
 
       if (distance < handleSize) {
         return 'move';
@@ -100,14 +97,16 @@ export class SelectionManager {
       // Convert point into overlay-local space (centered, unrotated)
       const dx = point.x - centerX;
       const dy = point.y - centerY;
-      const ux = dx * cos + dy * sin;      // inverse rotate
+      const ux = dx * cos + dy * sin; // inverse rotate
       const uy = -dx * sin + dy * cos;
       const handleSize = 12; // Size of handle hit area (tap-friendly)
 
       // Check rotation handle first (top middle)
       const rotateHandle = new Point(0, -height / 2 - 20);
-      if (Math.abs(ux - rotateHandle.x) < handleSize &&
-          Math.abs(uy - rotateHandle.y) < handleSize) {
+      if (
+        Math.abs(ux - rotateHandle.x) < handleSize &&
+        Math.abs(uy - rotateHandle.y) < handleSize
+      ) {
         return 'rotate';
       }
 
@@ -120,19 +119,17 @@ export class SelectionManager {
         { x: width / 2, y: height / 2, name: 'bottom-right' },
         { x: 0, y: height / 2, name: 'bottom' },
         { x: -width / 2, y: height / 2, name: 'bottom-left' },
-        { x: -width / 2, y: 0, name: 'left' }
+        { x: -width / 2, y: 0, name: 'left' },
       ];
 
       for (const handle of handles) {
-        if (Math.abs(ux - handle.x) < handleSize &&
-            Math.abs(uy - handle.y) < handleSize) {
+        if (Math.abs(ux - handle.x) < handleSize && Math.abs(uy - handle.y) < handleSize) {
           return handle.name;
         }
       }
 
       // Check if point is inside selection bounds
-      if (ux >= -width / 2 && ux <= width / 2 &&
-          uy >= -height / 2 && uy <= height / 2) {
+      if (ux >= -width / 2 && ux <= width / 2 && uy >= -height / 2 && uy <= height / 2) {
         return 'move';
       }
     }
@@ -180,26 +177,20 @@ export class SelectionManager {
 
       if (node.type === 'line') {
         const lineNode = node as LineNode;
-        
+
         // Reset transform for line
         this.selectionGraphics.position.set(0, 0);
         this.selectionGraphics.rotation = 0;
-        
+
         // Draw line
-        this.selectionGraphics.moveTo(
-          lineNode.x + lineNode.startX,
-          lineNode.y + lineNode.startY
-        );
-        this.selectionGraphics.lineTo(
-          lineNode.x + lineNode.endX,
-          lineNode.y + lineNode.endY
-        );
+        this.selectionGraphics.moveTo(lineNode.x + lineNode.startX, lineNode.y + lineNode.startY);
+        this.selectionGraphics.lineTo(lineNode.x + lineNode.endX, lineNode.y + lineNode.endY);
         this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 1 });
 
         // Draw endpoints
         const endpoints = [
           { x: lineNode.x + lineNode.startX, y: lineNode.y + lineNode.startY },
-          { x: lineNode.x + lineNode.endX, y: lineNode.y + lineNode.endY }
+          { x: lineNode.x + lineNode.endX, y: lineNode.y + lineNode.endY },
         ];
 
         for (const point of endpoints) {
@@ -224,23 +215,22 @@ export class SelectionManager {
           { x: -width / 2, y: 0, name: 'left' }, // Middle-left
         ];
 
-      for (const point of controlPoints) {
-        this.selectionGraphics.circle(point.x, point.y, 6);
-        this.selectionGraphics.fill({ color: 0xffffff });
-        this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 0.9 });
-      }
+        for (const point of controlPoints) {
+          this.selectionGraphics.circle(point.x, point.y, 6);
+          this.selectionGraphics.fill({ color: 0xffffff });
+          this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 0.9 });
+        }
 
-      // Draw rotation handle line and knob (above top-middle)
-      const rotationHandleY = -height / 2 - 20;
-      const rotationX = 0;
-      this.selectionGraphics.moveTo(rotationX, -height / 2);
-      this.selectionGraphics.lineTo(rotationX, rotationHandleY);
-      this.selectionGraphics.stroke({ color: 0x0099ff, width: 1, alpha: 0.9 });
-      this.selectionGraphics.circle(rotationX, rotationHandleY, 5);
-      this.selectionGraphics.fill({ color: 0xffffff });
-      this.selectionGraphics.stroke({ color: 0x0099ff, width: 1 });
+        // Draw rotation handle line and knob (above top-middle)
+        const rotationHandleY = -height / 2 - 20;
+        const rotationX = 0;
+        this.selectionGraphics.moveTo(rotationX, -height / 2);
+        this.selectionGraphics.lineTo(rotationX, rotationHandleY);
+        this.selectionGraphics.stroke({ color: 0x0099ff, width: 1, alpha: 0.9 });
+        this.selectionGraphics.circle(rotationX, rotationHandleY, 5);
+        this.selectionGraphics.fill({ color: 0xffffff });
+        this.selectionGraphics.stroke({ color: 0x0099ff, width: 1 });
       }
     }
   }
-}
 }
