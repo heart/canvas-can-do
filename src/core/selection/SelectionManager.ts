@@ -168,6 +168,15 @@ export class SelectionManager {
     if (this.selectedNodes.size < 2) return;
 
     const nodes = Array.from(this.selectedNodes);
+    const parent = nodes[0].parent as Container | null;
+    if (!parent) return;
+
+    // Preserve original z-order
+    const sorted = nodes
+      .map(n => ({ n, idx: parent.getChildIndex(n) }))
+      .sort((a, b) => a.idx - b.idx)
+      .map(e => e.n);
+    const insertIndex = sorted.length ? Math.min(...sorted.map(n => parent.getChildIndex(n))) : parent.children.length;
     const bounds = this.getSelectionBounds();
 
     // Create group at top-left of bounds and re-parent children with local coords
@@ -177,11 +186,14 @@ export class SelectionManager {
       y: bounds.y
     });
 
-    nodes.forEach(node => {
+    sorted.forEach(node => {
       // Adjust to group's local space
       node.position.set(node.position.x - bounds.x, node.position.y - bounds.y);
+      parent.removeChild(node);
       group.addChild(node);
     });
+
+    parent.addChildAt(group, insertIndex);
 
     // Clear selection and select the new group
     this.selectedNodes.clear();
@@ -196,6 +208,9 @@ export class SelectionManager {
     const node = Array.from(this.selectedNodes)[0];
     if (!(node instanceof GroupNode)) return [];
 
+    const parent = node.parent as Container | null;
+    const groupIndex = parent ? parent.getChildIndex(node) : -1;
+
     // Move children to world (parent) space
     const children = [...node.children] as BaseNode[];
     children.forEach(child => {
@@ -203,6 +218,14 @@ export class SelectionManager {
       child.position.copyFrom(worldPos);
       node.removeChild(child);
     });
+
+    // Remove group from parent and insert children at the group's position to preserve z-order
+    if (parent) {
+      parent.removeChild(node);
+      children.forEach((child, i) => {
+        parent.addChildAt(child, groupIndex + i);
+      });
+    }
 
     // Replace selection with the children
     this.selectedNodes.clear();
@@ -240,6 +263,18 @@ export class SelectionManager {
 
   getSelectedNodes(): BaseNode[] {
     return Array.from(this.selectedNodes);
+  }
+
+  deleteSelected(container: Container): BaseNode[] {
+    const removed: BaseNode[] = [];
+    this.selectedNodes.forEach(node => {
+      if (node.parent === container) {
+        container.removeChild(node);
+        removed.push(node);
+      }
+    });
+    this.clear();
+    return removed;
   }
 
   clear() {
