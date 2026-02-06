@@ -52,8 +52,6 @@ export class RectangleNode extends BaseNode {
     const fillColor = typeof fill === 'string' ? parseInt(fill.replace('#', ''), 16) : fill;
     const strokeColor = typeof stroke === 'string' ? parseInt(stroke.replace('#', ''), 16) : stroke;
 
-    this.graphics.clear();
-
     // Draw rectangle with fill and stroke
     if (this.cornerRadius) {
       this.graphics.roundRect(0, 0, this.width, this.height, this.cornerRadius);
@@ -79,47 +77,7 @@ export class RectangleNode extends BaseNode {
     }
   }
 
-  protected syncTransform(): void {
-    this.position.set(this.transform.x, this.transform.y);
-    this.rotation = this.transform.rotation;
-    this.scale.set(this.transform.scaleX, this.transform.scaleY);
-  }
-
-  updateTransform() {
-    this.syncTransform();
-    super.updateTransform();
-  }
-
-  // Transform convenience methods
-  setPosition(x: number, y: number): this {
-    this.transform.setPosition(x, y);
-    return this;
-  }
-
-  setScale(sx: number, sy = sx): this {
-    this.transform.setScale(sx, sy);
-    return this;
-  }
-
-  setRotation(rad: number): this {
-    this.transform.setRotation(rad);
-    return this;
-  }
-
-  translate(x: number, y: number): this {
-    this.transform.translate(x, y);
-    return this;
-  }
-
-  rotate(rad: number): this {
-    this.transform.rotate(rad);
-    return this;
-  }
-
-  scale(sx: number, sy = sx): this {
-    this.transform.scale(sx, sy);
-    return this;
-  }
+  // Transform convenience methods inherited from BaseNode
 
   // Style methods
   setStyle(style: Partial<Style>): this {
