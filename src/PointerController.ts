@@ -52,7 +52,6 @@ export class PointerController {
       case 'rectangle':
         this.preview = new PreviewRect(this.previewLayer);
         break;
-      case 'circle':
       case 'ellipse':
         this.preview = new PreviewEllipse(this.previewLayer);
         break;
@@ -103,17 +102,6 @@ export class PointerController {
           style: defaultStyle,
         });
         break;
-
-      case 'circle':
-        const radius = Math.min(rect.w, rect.h) / 2;
-        shape = new CircleNode({
-          radius,
-          x: rect.x + rect.w / 2,
-          y: rect.y + rect.h / 2,
-          style: defaultStyle,
-        });
-        break;
-
       case 'ellipse':
         let width = rect.w;
         let height = rect.h;
@@ -148,7 +136,7 @@ export class PointerController {
         if (e.shiftKey) {
           const dx = Math.abs(this.preview.last.x - this.preview.start.x);
           const dy = Math.abs(this.preview.last.y - this.preview.start.y);
-          
+
           if (dx > dy) {
             // Make horizontal
             endY = this.preview.start.y;
