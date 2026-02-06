@@ -1,8 +1,6 @@
 import { Application, Container } from 'pixi.js';
 import { PointerController } from './PointerController';
 import type { ShapeCreatedEvent } from './events';
-import { BaseNodeImpl } from './core/nodes/BaseNode';
-import type { RectangleNode } from './core/nodes/RectangleNode';
 
 export const version = '0.0.0';
 
@@ -71,10 +69,7 @@ export class CCDApp {
     // Listen for shape creation events
     window.addEventListener('shape:created', ((e: ShapeCreatedEvent) => {
       const shape = e.detail.shape;
-      if (shape.type === 'rectangle') {
-        const rectangleObject = new BaseNodeImpl(shape);
-        this.objectLayer.addChild(rectangleObject);
-      }
+      this.objectLayer.addChild(shape);
     }) as EventListener);
 
     this.host?.addEventListener('pointerdown', (e) => {

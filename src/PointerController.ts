@@ -1,8 +1,7 @@
 import { PreviewRect } from './core/nodes/preview/PreviewRect';
 import type { ToolName } from './index';
-import type { RectangleNode } from './core/nodes/RectangleNode';
+import { RectangleNode } from './core/nodes/RectangleNode';
 import { Container } from 'pixi.js';
-import { Transform2D } from './core/math/Transform2D';
 
 export class PointerController {
   private previewRect: PreviewRect;
@@ -35,9 +34,7 @@ export class PointerController {
     if (this.activeTool === 'rectangle') {
       const rect = this.previewRect.end();
       if (rect) {
-        const rectangleNode: RectangleNode = {
-          type: 'rectangle',
-          id: crypto.randomUUID(),
+        const rectangleNode = new RectangleNode({
           width: rect.w,
           height: rect.h,
           x: rect.x,
@@ -46,11 +43,9 @@ export class PointerController {
             fill: '#ffffff',
             stroke: '#000000',
             strokeWidth: 1,
-            opacity: 1,
-          },
-          visible: true,
-          locked: false,
-        };
+            opacity: 1
+          }
+        });
 
         const event = new CustomEvent('shape:created', {
           detail: { shape: rectangleNode },
