@@ -7,7 +7,6 @@ import { PreviewBase } from './core/nodes/preview/PreviewBase';
 import type { ToolName } from './index';
 import { Container } from 'pixi.js';
 import { RectangleNode } from './core/nodes/RectangleNode';
-import { CircleNode } from './core/nodes/CircleNode';
 import { EllipseNode } from './core/nodes/EllipseNode';
 import { LineNode } from './core/nodes/LineNode';
 import { StarNode } from './core/nodes/StarNode';
@@ -16,7 +15,7 @@ import { TextNode } from './core/nodes/TextNode';
 export class PointerController {
   private preview: PreviewBase;
   private activeTool: ToolName = 'select';
-  private onToolChange?: (tool: ToolName) => void;
+
   private previewLayer: Container;
 
   constructor(previewLayer: Container) {
@@ -198,23 +197,11 @@ export class PointerController {
         detail: { shape },
       });
       window.dispatchEvent(event);
-
-      // Reset to select tool after creating shape
-      this.setTool('select');
-      // Notify about tool change
-      this.onToolChange?.('select');
     }
-  }
-
-  setToolChangeHandler(handler: (tool: ToolName) => void) {
-    this.onToolChange = handler;
   }
 
   cancel() {
     this.preview.cancel();
-    // Reset to select tool when canceling
     this.setTool('select');
-    // Notify about tool change through handler
-    this.onToolChange?.('select');
   }
 }
