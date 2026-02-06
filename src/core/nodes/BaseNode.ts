@@ -18,6 +18,8 @@ export class BaseNode extends Container {
   transform: Transform2D;
   style: Style;
   locked: boolean;
+  protected _width: number = 0;
+  protected _height: number = 0;
 
   constructor(options: {
     id?: string;
@@ -44,7 +46,23 @@ export class BaseNode extends Container {
     this.syncTransform();
   }
 
-  protected syncTransform() {
+  get width(): number {
+    return this._width;
+  }
+
+  set width(value: number) {
+    this._width = value;
+  }
+
+  get height(): number {
+    return this._height;
+  }
+
+  set height(value: number) {
+    this._height = value;
+  }
+
+  protected syncTransform(): void {
     this.position.set(this.transform.x, this.transform.y);
     this.rotation = this.transform.rotation;
     this.scale.set(this.transform.scaleX, this.transform.scaleY);

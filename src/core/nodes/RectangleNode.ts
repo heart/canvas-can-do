@@ -5,10 +5,8 @@ import type { Style } from './BaseNode';
 
 export class RectangleNode extends BaseNode {
   readonly type = 'rectangle' as const;
-  width: number;
-  height: number;
   cornerRadius?: number;
-  private graphics: Graphics;
+  protected graphics: Graphics;
 
   constructor(options: {
     id?: string;
@@ -29,8 +27,8 @@ export class RectangleNode extends BaseNode {
       locked: options.locked
     });
 
-    this.width = options.width;
-    this.height = options.height;
+    this._width = options.width;
+    this._height = options.height;
     this.cornerRadius = options.cornerRadius;
 
     // Setup graphics
@@ -40,7 +38,7 @@ export class RectangleNode extends BaseNode {
     this.syncTransform();
   }
 
-  private redraw() {
+  protected redraw(): void {
     const { fill, stroke, strokeWidth = 1, opacity = 1 } = this.style;
 
     this.graphics.clear();
@@ -50,7 +48,7 @@ export class RectangleNode extends BaseNode {
     const strokeColor = typeof stroke === 'string' ? parseInt(stroke.replace('#', ''), 16) : stroke;
 
     // Fill
-    if (fill) {
+    if (fill !== undefined) {
       this.graphics.beginFill(fillColor, opacity);
     }
 
