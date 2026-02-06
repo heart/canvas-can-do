@@ -269,8 +269,16 @@ export class PointerController {
 
       if (hitObject) {
         const bounds = hitObject.getBounds();
+        const topLeft = this.world
+          ? this.world.toLocal(new Point(bounds.x, bounds.y))
+          : new Point(bounds.x, bounds.y);
+        const bottomRight = this.world
+          ? this.world.toLocal(new Point(bounds.x + bounds.width, bounds.y + bounds.height))
+          : new Point(bounds.x + bounds.width, bounds.y + bounds.height);
+        const w = bottomRight.x - topLeft.x;
+        const h = bottomRight.y - topLeft.y;
         this.preview.graphics.clear();
-        this.preview.graphics.rect(bounds.x, bounds.y, bounds.width, bounds.height);
+        this.preview.graphics.rect(topLeft.x, topLeft.y, w, h);
         this.preview.graphics.stroke({ color: 0x0be666, alpha: 0.8, width: 1 });
 
         if (!this.preview.graphics.parent) {
@@ -289,10 +297,9 @@ export class PointerController {
       this.selectionManager.endTransform();
     }
 
-    if (this.isPanning) {
-      this.isPanning = false;
+    if (this.isPanning && !e.buttons) {
       this.lastPan = undefined;
-      this.setCursor(null);
+      this.setCursor('grab');
       return;
     }
 
