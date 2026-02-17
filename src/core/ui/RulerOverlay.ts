@@ -4,11 +4,15 @@ export class RulerOverlay {
   private root: Container;
   private g: Graphics;
   private labels: Container;
+  private uiLayer: Container;
+  private getViewport: () => { width: number; height: number; scale: number; x: number; y: number };
 
   constructor(
-    private uiLayer: Container,
-    private getViewport: () => { width: number; height: number; scale: number; x: number; y: number }
+    uiLayer: Container,
+    getViewport: () => { width: number; height: number; scale: number; x: number; y: number }
   ) {
+    this.uiLayer = uiLayer;
+    this.getViewport = getViewport;
     this.root = new Container();
     this.g = new Graphics();
     this.labels = new Container();
@@ -33,8 +37,6 @@ export class RulerOverlay {
 
     const step = this.getNiceStep(scale);
     const pxPerUnit = scale;
-    const pxStep = step * pxPerUnit;
-
     // top ruler
     const startWorldX = (-x) / scale;
     const startIndexX = Math.floor(startWorldX / step) - 1;
