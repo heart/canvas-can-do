@@ -31,6 +31,11 @@ type SceneSnapshot = {
   nodes: SerializedNode[];
 };
 
+export type SceneDocument = {
+  version: 1;
+  nodes: SerializedNode[];
+};
+
 export class HistoryManager {
   private undoStack: SceneSnapshot[] = [];
   private redoStack: SceneSnapshot[] = [];
@@ -72,6 +77,34 @@ export class HistoryManager {
       .filter((c): c is BaseNode => c instanceof BaseNode)
       .map((node) => this.serializeNode(node));
     return { nodes };
+  }
+
+  async exportDocument(): Promise<SceneDocument> {
+    const snapshot = await this.serializeScene();
+    return { version: 1, nodes: snapshot.nodes };
+  }
+
+  async importDocument(doc: SceneDocument): Promise<void> {
+    if (!doc || doc.version !== 1) {
+      throw new Error('Unsupported document version');
+    }
+    await this.restore({ nodes: doc.nodes });
+    const key = JSON.stringify(doc);
+    this.lastSnapshotKey = key;
+    this.undoStack = [{ nodes: doc.nodes }];
+    this.redoStack = [];
+  }
+
+  hasContent(): boolean {
+    return this.objectLayer.children.some((c) => c instanceof BaseNode);
+  }
+
+  async clearDocument(): Promise<void> {
+    const children = this.objectLayer.children.slice();
+    children.forEach((child) => this.objectLayer.removeChild(child));
+    this.lastSnapshotKey = '';
+    this.undoStack = [];
+    this.redoStack = [];
   }
 
   private serializeNode(node: BaseNode): SerializedNode {

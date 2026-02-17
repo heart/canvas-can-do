@@ -6,6 +6,7 @@ import { BaseNode } from './core/nodes/BaseNode';
 import type { InspectableNode } from './core/nodes';
 import { ImageNode } from './core/nodes/ImageNode';
 import { HistoryManager } from './core/history/HistoryManager';
+import type { SceneDocument } from './core/history/HistoryManager';
 
 export const version = '0.0.0';
 
@@ -702,6 +703,27 @@ export class CCDApp {
 
   async redo() {
     await this.history?.redo();
+    this.dispatchLayerHierarchyChanged();
+    this.pointerController?.clearSelection();
+  }
+
+  async exportJSON(): Promise<SceneDocument | null> {
+    const doc = await this.history?.exportDocument();
+    return doc ?? null;
+  }
+
+  async importJSON(doc: SceneDocument): Promise<void> {
+    await this.history?.importDocument(doc);
+    this.dispatchLayerHierarchyChanged();
+    this.pointerController?.clearSelection();
+  }
+
+  hasDocumentContent(): boolean {
+    return this.history?.hasContent() ?? false;
+  }
+
+  async clearDocument(): Promise<void> {
+    await this.history?.clearDocument();
     this.dispatchLayerHierarchyChanged();
     this.pointerController?.clearSelection();
   }

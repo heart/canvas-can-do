@@ -37,6 +37,25 @@
   border-radius: 4px;
 }
 
+.io-panel {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+#json-io {
+  width: 100%;
+  max-width: 800px;
+  min-height: 120px;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+}
+
 .tool-btn {
   padding: 0.5rem 1rem;
   border: 1px solid #ccc;

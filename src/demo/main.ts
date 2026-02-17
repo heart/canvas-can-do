@@ -47,6 +47,11 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     </label>
     <button id="export-btn" class="tool-btn">EXPORT</button>
   </div>
+  <div class="io-panel">
+    <button id="save-json-btn" class="tool-btn">SAVE JSON</button>
+    <button id="load-json-btn" class="tool-btn">LOAD JSON</button>
+    <textarea id="json-io" rows="6" placeholder="Paste JSON here"></textarea>
+  </div>
   <div id="editor"></div>
   <div id="layer"></div>
 `;
@@ -105,6 +110,9 @@ const exportScope = document.getElementById('export-scope') as HTMLSelectElement
 const exportType = document.getElementById('export-type') as HTMLSelectElement | null;
 const exportEmbed = document.getElementById('export-image-embed') as HTMLSelectElement | null;
 const exportMax = document.getElementById('export-image-max') as HTMLInputElement | null;
+const saveJsonBtn = document.getElementById('save-json-btn');
+const loadJsonBtn = document.getElementById('load-json-btn');
+const jsonIo = document.getElementById('json-io') as HTMLTextAreaElement | null;
 
 function downloadDataUrl(dataUrl: string, filename: string) {
   const link = document.createElement('a');
@@ -151,6 +159,22 @@ exportBtn?.addEventListener('click', async () => {
   });
   if (!dataUrl) return;
   downloadDataUrl(dataUrl, `export-${scope}.${type}`);
+});
+
+saveJsonBtn?.addEventListener('click', async () => {
+  const doc = await app.exportJSON();
+  if (!doc || !jsonIo) return;
+  jsonIo.value = JSON.stringify(doc, null, 2);
+});
+
+loadJsonBtn?.addEventListener('click', async () => {
+  if (!jsonIo) return;
+  try {
+    const doc = JSON.parse(jsonIo.value);
+    await app.importJSON(doc);
+  } catch (err) {
+    console.error('Invalid JSON', err);
+  }
 });
 
 // Start with select tool active
