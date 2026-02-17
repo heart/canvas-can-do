@@ -34,7 +34,6 @@ export class PointerController {
   private world?: Container;
   private eventTarget = new EventTarget();
   private activeTextInput?: HTMLInputElement;
-  private activeTextNode?: TextNode;
   private onHistoryCapture?: () => void | Promise<void>;
 
   constructor(
@@ -297,7 +296,9 @@ export class PointerController {
       if (hitObject && this.selectionManager.getSelectedNodes().length === 1) {
         this.selectionManager.startTransform(point, 'move');
       }
-    } else if (['rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)) {
+    } else if (
+      ['rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
+    ) {
       this.preview.begin(point);
     }
   }
@@ -365,7 +366,9 @@ export class PointerController {
       } else {
         this.preview.graphics.clear();
       }
-    } else if (['rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)) {
+    } else if (
+      ['rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
+    ) {
       this.preview.update(point);
     }
   }
@@ -581,7 +584,6 @@ export class PointerController {
     if (this.activeTextInput) {
       this.activeTextInput.remove();
       this.activeTextInput = undefined;
-      this.activeTextNode = undefined;
     }
 
     const canvas = this.app.renderer.canvas as HTMLCanvasElement;
@@ -617,7 +619,6 @@ export class PointerController {
       cleaned = true;
       if (input.parentNode) input.remove();
       this.activeTextInput = undefined;
-      this.activeTextNode = undefined;
     };
 
     const commit = () => {
@@ -645,6 +646,5 @@ export class PointerController {
     });
 
     this.activeTextInput = input;
-    this.activeTextNode = node;
   }
 }

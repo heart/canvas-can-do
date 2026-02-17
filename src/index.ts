@@ -939,4 +939,8 @@ export class CCDApp {
   getLayerHierarchy() {
     return LayerHierarchy.getHierarchy(this.objectLayer);
   }
+
+  getPixiApp() {
+    return this.app;
+  }
 }
