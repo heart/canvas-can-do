@@ -7,6 +7,7 @@ import type { InspectableNode } from './core/nodes';
 import { ImageNode } from './core/nodes/ImageNode';
 import { HistoryManager } from './core/history/HistoryManager';
 import type { SceneDocument } from './core/history/HistoryManager';
+import { RulerOverlay } from './core/ui/RulerOverlay';
 
 export const version = '0.0.0';
 
@@ -49,6 +50,7 @@ export class CCDApp {
   host?: HTMLElement;
   pointerController?: PointerController;
   history?: HistoryManager;
+  private ruler?: RulerOverlay;
 
   activeTool: ToolName = 'select';
 
@@ -89,6 +91,14 @@ export class CCDApp {
     this.initPointerController();
     this.history = new HistoryManager(this.objectLayer);
     await this.history.capture();
+    this.ruler = new RulerOverlay(this.uiLayer, () => ({
+      width: this.app.screen.width,
+      height: this.app.screen.height,
+      scale: this.world.scale.x,
+      x: this.world.position.x,
+      y: this.world.position.y,
+    }));
+    this.app.ticker.add(() => this.ruler?.update());
 
     // zoom hotkeys
     window.addEventListener('keydown', this.handleZoomKeys.bind(this));
