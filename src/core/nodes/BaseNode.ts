@@ -1,4 +1,5 @@
 import { Container } from 'pixi.js';
+import type { TextStyleFontWeight } from 'pixi.js';
 
 export type NodeType = 'rectangle' | 'circle' | 'text' | 'line' | 'ellipse' | 'star' | 'group';
 
@@ -31,6 +32,10 @@ export interface Style {
   stroke?: string;
   strokeWidth?: number;
   opacity?: number;
+  fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: TextStyleFontWeight;
+  fontStyle?: 'normal' | 'italic' | 'oblique';
 }
 
 export class BaseNode extends Container {

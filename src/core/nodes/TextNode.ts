@@ -1,6 +1,7 @@
 import { Text } from 'pixi.js';
+import type { TextStyleFontWeight } from 'pixi.js';
 import { BaseNode } from './BaseNode';
-import type { Style } from './BaseNode';
+import type { Style, NodePropertyDescriptor } from './BaseNode';
 
 export class TextNode extends BaseNode {
   readonly type = 'text' as const;
@@ -33,13 +34,22 @@ export class TextNode extends BaseNode {
     this.text = options.text;
     
     // Setup text sprite
+    const fontSize = this.style.fontSize ?? 20;
+    const fontFamily = this.style.fontFamily ?? 'Arial';
+    const fontWeight = (this.style.fontWeight ?? 'normal') as TextStyleFontWeight;
+    const fontStyle = this.style.fontStyle ?? 'normal';
     this.textSprite = new Text({
       text: this.text,
       style: {
         fill: this.style.fill ?? 0x000000,
-        fontSize: 16
+        fontSize,
+        fontFamily,
+        fontWeight,
+        fontStyle,
       }
     });
+    this.textSprite.resolution = Math.max(1, window.devicePixelRatio || 1);
+    this.textSprite.roundPixels = true;
     this.addChild(this.textSprite);
     
     // Set initial dimensions
@@ -63,12 +73,53 @@ export class TextNode extends BaseNode {
         : style.fill;
       this.textSprite.style.fill = fillColor;
     }
+    if (style.fontSize !== undefined) {
+      this.textSprite.style.fontSize = style.fontSize;
+    }
+    if (style.fontFamily !== undefined) {
+      this.textSprite.style.fontFamily = style.fontFamily;
+    }
+    if (style.fontWeight !== undefined) {
+      this.textSprite.style.fontWeight = style.fontWeight as TextStyleFontWeight;
+    }
+    if (style.fontStyle !== undefined) {
+      this.textSprite.style.fontStyle = style.fontStyle;
+    }
     return this;
   }
 
-  getProps() {
+  getProps(): NodePropertyDescriptor[] {
     return [
       ...super.getProps(),
+      {
+        name: 'Font Size',
+        key: 'fontSize',
+        type: 'float',
+        value: this.style.fontSize ?? 20,
+        desc: 'Font size',
+        min: 1,
+      },
+      {
+        name: 'Font Family',
+        key: 'fontFamily',
+        type: 'string',
+        value: this.style.fontFamily ?? 'Arial',
+        desc: 'Font family',
+      },
+      {
+        name: 'Font Weight',
+        key: 'fontWeight',
+        type: 'string',
+        value: (this.style.fontWeight ?? 'normal') as string,
+        desc: 'Font weight (e.g. 300, 400, 600, bold, normal)',
+      },
+      {
+        name: 'Font Style',
+        key: 'fontStyle',
+        type: 'string',
+        value: this.style.fontStyle ?? 'normal',
+        desc: 'Font style (normal, italic, oblique)',
+      },
       {
         name: 'Text',
         key: 'text',

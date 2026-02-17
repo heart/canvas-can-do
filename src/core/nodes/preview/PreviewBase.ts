@@ -16,6 +16,7 @@ export abstract class PreviewBase {
   begin(start: Point): void {
     this.active = true;
     this.start = start;
+    this.last = start;
     this.previewLayer.addChild(this.g);
     this.redraw(start, start);
   }

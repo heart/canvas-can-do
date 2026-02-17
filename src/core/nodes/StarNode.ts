@@ -57,15 +57,29 @@ export class StarNode extends BaseNode {
     const fillColor = typeof fill === 'string' ? parseInt(fill.replace('#', ''), 16) : fill;
     const strokeColor = typeof stroke === 'string' ? parseInt(stroke.replace('#', ''), 16) : stroke;
 
-    // Draw star anchored at top-left by offsetting with outerRadius
-    const offset = this.outerRadius;
+    // Draw star anchored at top-left, using width/height for transform resizing.
+    const outerRadiusX = this.width / 2;
+    const outerRadiusY = this.height / 2;
+    const ratio = this.outerRadius > 0 ? this.innerRadius / this.outerRadius : 0.5;
+    const innerRadiusX = outerRadiusX * ratio;
+    const innerRadiusY = outerRadiusY * ratio;
+    const offsetX = outerRadiusX;
+    const offsetY = outerRadiusY;
+
+    // Keep radii in sync with current bounds for inspectors/props.
+    this.outerRadius = outerRadiusX;
+    this.innerRadius = innerRadiusX;
+
     const points: number[] = [];
     for (let i = 0; i < this.points * 2; i++) {
-      const radius = i % 2 === 0 ? this.outerRadius : this.innerRadius;
-      const angle = (i * Math.PI) / this.points;
+      const isOuter = i % 2 === 0;
+      const radiusX = isOuter ? outerRadiusX : innerRadiusX;
+      const radiusY = isOuter ? outerRadiusY : innerRadiusY;
+      // Rotate so the first outer point is straight up.
+      const angle = (i * Math.PI) / this.points - Math.PI / 2;
       points.push(
-        Math.cos(angle) * radius + offset,
-        Math.sin(angle) * radius + offset
+        Math.cos(angle) * radiusX + offsetX,
+        Math.sin(angle) * radiusY + offsetY
       );
     }
     this.graphics.poly(points);

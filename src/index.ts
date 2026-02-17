@@ -52,6 +52,8 @@ export class CCDApp {
       background: '#F2F2F2',
       resizeTo: host, // ให้ Pixi จัดการ resize เอง
       antialias: true,
+      autoDensity: true,
+      resolution: Math.max(1, window.devicePixelRatio || 1),
     });
 
     this.host = host;
@@ -102,6 +104,11 @@ export class CCDApp {
       this.dispatchLayerHierarchyChanged();
       this.useTool('select');
     }) as EventListener);
+    this.pointerController.addEventListener('viewport:changed', ((e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const evt = new CustomEvent('viewport:changed', { detail });
+      this.dispatchOnHost(evt);
+    }) as EventListener);
 
     this.host?.addEventListener('pointerdown', (e) => {
       //this.host.setPointerCapture(e.pointerId);
@@ -115,6 +122,10 @@ export class CCDApp {
     this.host?.addEventListener('pointerup', (e) => {
       //host.releasePointerCapture(e.pointerId);
       this.pointerController?.onPointerUp(e);
+    });
+
+    this.host?.addEventListener('dblclick', (e) => {
+      this.pointerController?.onDoubleClick(e);
     });
 
     this.host?.addEventListener('pointercancel', (_) => {
@@ -184,6 +195,17 @@ export class CCDApp {
 
     // reposition so center stays fixed
     this.world.position.set(center.x - worldX * clamped, center.y - worldY * clamped);
+
+    this.dispatchOnHost(
+      new CustomEvent('viewport:changed', {
+        detail: {
+          x: this.world.position.x,
+          y: this.world.position.y,
+          zoom: this.world.scale.x,
+          source: 'zoom',
+        },
+      })
+    );
   }
 
   setCursor(name: string | null) {
@@ -273,6 +295,14 @@ export class CCDApp {
           case 'opacity':
             this.applyStyle(node, key, value);
             break;
+          case 'fontSize':
+          case 'fontFamily':
+          case 'fontWeight':
+          case 'fontStyle':
+            if (node.type === 'text') {
+              this.applyStyle(node, key, value);
+            }
+            break;
           case 'radius':
             if ('radius' in node) {
               (node as any).radius = Number(value);
@@ -329,7 +359,9 @@ export class CCDApp {
     if (touchedNodes.length) {
       // Let listeners refresh panels
       const nodes: InspectableNode[] = touchedNodes
-        .map((n) => (typeof (n as any).getInspectable === 'function' ? (n as any).getInspectable() : null))
+        .map((n) =>
+          typeof (n as any).getInspectable === 'function' ? (n as any).getInspectable() : null
+        )
         .filter((n): n is InspectableNode => n !== null);
 
       const propEvent = new CustomEvent('properties:changed', { detail: { nodes } });

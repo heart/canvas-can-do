@@ -33,6 +33,8 @@ export class PointerController {
   private app?: Application;
   private world?: Container;
   private eventTarget = new EventTarget();
+  private activeTextInput?: HTMLInputElement;
+  private activeTextNode?: TextNode;
 
   constructor(
     previewLayer: Container,
@@ -53,11 +55,19 @@ export class PointerController {
     this.preview = new PreviewRect(previewLayer);
   }
 
-  addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) {
+  addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions
+  ) {
     this.eventTarget.addEventListener(type, listener, options);
   }
 
-  removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) {
+  removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | EventListenerOptions
+  ) {
     this.eventTarget.removeEventListener(type, listener, options);
   }
 
@@ -66,6 +76,10 @@ export class PointerController {
   }
 
   handleKeyDown(e: KeyboardEvent) {
+    if (this.activeTextInput) {
+      return;
+    }
+
     if (e.key === 'Shift') {
       if ('setShiftKey' in this.preview) {
         (this.preview as any).setShiftKey(true);
@@ -176,6 +190,10 @@ export class PointerController {
   }
 
   handleKeyUp(e: KeyboardEvent) {
+    if (this.activeTextInput) {
+      return;
+    }
+
     if (e.key === 'Shift') {
       if ('setShiftKey' in this.preview) {
         (this.preview as any).setShiftKey(false);
@@ -209,6 +227,9 @@ export class PointerController {
         break;
       case 'star':
         this.preview = new PreviewStar(this.previewLayer);
+        break;
+      case 'text':
+        this.preview = new PreviewRect(this.previewLayer);
         break;
     }
   }
@@ -244,9 +265,20 @@ export class PointerController {
       if (hitObject && this.selectionManager.getSelectedNodes().length === 1) {
         this.selectionManager.startTransform(point, 'move');
       }
-    } else if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
+    } else if (['rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)) {
       this.preview.begin(point);
     }
+  }
+
+  onDoubleClick(e: MouseEvent) {
+    const globalPoint = this.toGlobalPoint(e as any);
+    const hitObject = this.findHitObject(globalPoint);
+
+    if (!hitObject || (hitObject as any).type !== 'text') return;
+    const textNode = hitObject as TextNode;
+    if (textNode.locked) return;
+
+    this.beginTextEdit(textNode);
   }
 
   onPointerMove(e: PointerEvent) {
@@ -257,6 +289,16 @@ export class PointerController {
         this.world.position.x += dx;
         this.world.position.y += dy;
         this.lastPan.set(e.clientX, e.clientY);
+        this.dispatchEvent(
+          new CustomEvent('viewport:changed', {
+            detail: {
+              x: this.world.position.x,
+              y: this.world.position.y,
+              zoom: this.world.scale.x,
+              source: 'pan',
+            },
+          })
+        );
       }
       return;
     }
@@ -291,7 +333,7 @@ export class PointerController {
       } else {
         this.preview.graphics.clear();
       }
-    } else if (['rectangle', 'circle', 'ellipse', 'line', 'star'].includes(this.activeTool)) {
+    } else if (['rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)) {
       this.preview.update(point);
     }
   }
@@ -405,11 +447,15 @@ export class PointerController {
         break;
 
       case 'text':
+        const textStyle = {
+          ...defaultStyle,
+          fill: '#333333',
+        };
         shape = new TextNode({
           text: 'Double click to edit',
           x: rect.x,
           y: rect.y,
-          style: defaultStyle,
+          style: textStyle,
         });
         break;
     }
@@ -482,11 +528,89 @@ export class PointerController {
         const maxX = Math.max(startX, endX) + tolerance;
         const minY = Math.min(startY, endY) - tolerance;
         const maxY = Math.max(startY, endY) + tolerance;
-        return dist <= tolerance && globalPoint.x >= minX && globalPoint.x <= maxX && globalPoint.y >= minY && globalPoint.y <= maxY;
+        return (
+          dist <= tolerance &&
+          globalPoint.x >= minX &&
+          globalPoint.x <= maxX &&
+          globalPoint.y >= minY &&
+          globalPoint.y <= maxY
+        );
       }
 
       const bounds = child.getBounds();
       return bounds.containsPoint(globalPoint.x, globalPoint.y);
     });
+  }
+
+  private beginTextEdit(node: TextNode) {
+    if (!this.app) return;
+
+    if (this.activeTextInput) {
+      this.activeTextInput.remove();
+      this.activeTextInput = undefined;
+      this.activeTextNode = undefined;
+    }
+
+    const canvas = this.app.renderer.canvas as HTMLCanvasElement;
+    const rect = canvas.getBoundingClientRect();
+    const bounds = node.getBounds();
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = node.text;
+    input.style.position = 'absolute';
+    input.style.left = `${rect.left + bounds.x}px`;
+    input.style.top = `${rect.top + bounds.y}px`;
+    input.style.width = `${Math.max(bounds.width, 40)}px`;
+    input.style.height = `${Math.max(bounds.height, 20)}px`;
+    input.style.fontSize = '16px';
+    input.style.padding = '0';
+    input.style.margin = '0';
+    input.style.border = '1px solid #0be666';
+    input.style.outline = 'none';
+    input.style.background = '#ffffff';
+    input.style.color = '#000000';
+    input.style.zIndex = '10000';
+
+    document.body.appendChild(input);
+    input.focus();
+    input.select();
+
+    let canceled = false;
+
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      if (input.parentNode) input.remove();
+      this.activeTextInput = undefined;
+      this.activeTextNode = undefined;
+    };
+
+    const commit = () => {
+      if (canceled) return;
+      node.setText(input.value);
+      this.selectionManager.select(node);
+      this.onLayerChanged();
+      cleanup();
+    };
+
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        commit();
+      } else if (ev.key === 'Escape') {
+        ev.preventDefault();
+        canceled = true;
+        cleanup();
+      }
+    });
+
+    input.addEventListener('blur', () => {
+      commit();
+    });
+
+    this.activeTextInput = input;
+    this.activeTextNode = node;
   }
 }

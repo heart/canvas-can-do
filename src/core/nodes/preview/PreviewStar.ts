@@ -17,7 +17,8 @@ export class PreviewStar extends PreviewBase {
     const starPoints: number[] = [];
     for (let i = 0; i < points * 2; i++) {
       const radius = i % 2 === 0 ? outerRadius : innerRadius;
-      const angle = (i * Math.PI) / points;
+      // Rotate so the first outer point is straight up.
+      const angle = (i * Math.PI) / points - Math.PI / 2;
       starPoints.push(
         centerX + Math.cos(angle) * radius,
         centerY + Math.sin(angle) * radius

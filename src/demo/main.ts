@@ -52,13 +52,22 @@ tools.forEach((tool) => {
 });
 
 // Listen for tool changes from the app
-window.addEventListener('tool:changed', ((e: CustomEvent<{ tool: ToolName }>) => {
+editor?.addEventListener('tool:changed', ((e: CustomEvent<{ tool: ToolName }>) => {
+  console.log('changed', e.detail.tool);
   updateActiveToolButton(e.detail.tool);
 }) as EventListener);
 
 // Listen for tool changes from the app
-window.addEventListener('layer:changed', ((e: CustomEvent<{ hierarchy: LayerNode; selectedIds?: string[] }>) => {
+editor?.addEventListener('layer:changed', ((
+  e: CustomEvent<{ hierarchy: LayerNode; selectedIds?: string[] }>
+) => {
   updateLayer(e.detail.hierarchy);
+}) as EventListener);
+
+editor?.addEventListener('viewport:changed', ((
+  e: CustomEvent<{ hierarchy: LayerNode; selectedIds?: string[] }>
+) => {
+  console.log('viewport:changed', e.detail);
 }) as EventListener);
 
 // Start with select tool active
