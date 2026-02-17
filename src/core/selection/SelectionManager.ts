@@ -287,7 +287,7 @@ export class SelectionManager {
     return children;
   }
 
-  private getSelectionBounds() {
+  getSelectionBounds() {
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;

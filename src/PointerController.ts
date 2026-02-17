@@ -82,6 +82,15 @@ export class PointerController {
     this.selectionManager.clear();
   }
 
+  getSelectedNodes() {
+    return this.selectionManager.getSelectedNodes();
+  }
+
+  getSelectionBounds() {
+    if (this.selectionManager.getSelectedNodes().length === 0) return null;
+    return this.selectionManager.getSelectionBounds();
+  }
+
   handleKeyDown(e: KeyboardEvent) {
     if (this.activeTextInput) {
       return;

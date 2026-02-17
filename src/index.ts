@@ -1,8 +1,9 @@
-import { Application, Container, Point } from 'pixi.js';
+import { Application, Container, Matrix, Point, RenderTexture, Color } from 'pixi.js';
 import { PointerController } from './PointerController';
 import type { ShapeCreatedEvent } from './events';
 import { LayerHierarchy } from './core/layers/LayerHierarchy';
-import type { BaseNode, InspectableNode } from './core/nodes';
+import { BaseNode } from './core/nodes/BaseNode';
+import type { InspectableNode } from './core/nodes';
 import { ImageNode } from './core/nodes/ImageNode';
 import { HistoryManager } from './core/history/HistoryManager';
 
@@ -306,6 +307,375 @@ export class CCDApp {
       this.app.renderer.events.mapPositionToPoint(p, clientX, clientY);
     }
     return this.world.toLocal(p);
+  }
+
+  async exportRaster(options: {
+    type: 'png' | 'jpg';
+    scope: 'all' | 'selection';
+    quality?: number;
+    padding?: number;
+    background?: string;
+  }): Promise<string | null> {
+    const bounds = this.getExportBounds(options.scope);
+    if (!bounds) return null;
+
+    const padding = options.padding ?? 0;
+    const width = Math.max(1, Math.ceil(bounds.width + padding * 2));
+    const height = Math.max(1, Math.ceil(bounds.height + padding * 2));
+
+    const rt = RenderTexture.create({ width, height, resolution: 1 });
+    const transform = new Matrix().translate(-bounds.x + padding, -bounds.y + padding);
+
+    const clearColor =
+      options.background !== undefined
+        ? this.toColorNumber(options.background)
+        : options.type === 'jpg'
+          ? 0xffffff
+          : new Color(0x000000).setAlpha(0);
+
+    const render = () =>
+      this.app.renderer.render({
+        container: this.objectLayer,
+        target: rt,
+        clear: true,
+        clearColor,
+        transform,
+      });
+
+    if (options.scope === 'selection') {
+      const selected = this.pointerController?.getSelectedNodes() ?? [];
+      const restore = this.applySelectionVisibility(selected);
+      try {
+        render();
+      } finally {
+        restore();
+      }
+    } else {
+      render();
+    }
+
+    const canvas = this.app.renderer.extract.canvas(rt);
+
+    if (canvas && canvas.toDataURL) {
+      const mime = options.type === 'jpg' ? 'image/jpeg' : 'image/png';
+
+      const dataUrl = canvas.toDataURL(mime, options.quality ?? 0.92);
+      rt.destroy(true);
+      return dataUrl;
+    }
+
+    rt.destroy(true);
+    return null;
+  }
+
+  async exportSVG(options: {
+    scope: 'all' | 'selection';
+    padding?: number;
+    imageEmbed?: 'original' | 'display' | 'max';
+    imageMaxEdge?: number;
+    background?: string;
+  }): Promise<string | null> {
+    const bounds = this.getExportBounds(options.scope);
+    if (!bounds) return null;
+
+    const padding = options.padding ?? 0;
+    const width = Math.max(1, Math.ceil(bounds.width + padding * 2));
+    const height = Math.max(1, Math.ceil(bounds.height + padding * 2));
+    const offsetX = -bounds.x + padding;
+    const offsetY = -bounds.y + padding;
+
+    const nodes =
+      options.scope === 'selection'
+        ? (this.pointerController?.getSelectedNodes() ?? [])
+        : this.getRootNodes();
+
+    const invWorld = this.world.worldTransform.clone().invert();
+    const parts: string[] = [];
+
+    if (options.background) {
+      parts.push(
+        `<rect x="0" y="0" width="${width}" height="${height}" fill="${options.background}"/>`
+      );
+    }
+
+    for (const node of nodes) {
+      parts.push(
+        await this.nodeToSvg(node, {
+          invWorld,
+          offsetX,
+          offsetY,
+          imageEmbed: options.imageEmbed ?? 'original',
+          imageMaxEdge: options.imageMaxEdge ?? 2048,
+        })
+      );
+    }
+
+    return [
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+      `<g transform="translate(${offsetX} ${offsetY})">`,
+      parts.join(''),
+      `</g>`,
+      `</svg>`,
+    ].join('');
+  }
+
+  private getExportBounds(scope: 'all' | 'selection') {
+    const nodes =
+      scope === 'selection'
+        ? (this.pointerController?.getSelectedNodes() ?? [])
+        : this.getRootNodes();
+    if (!nodes.length) return null;
+    return this.getBoundsFromNodes(nodes);
+  }
+
+  private getBoundsFromNodes(nodes: BaseNode[]) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    nodes.forEach((node) => {
+      const b = node.getBounds();
+      const tl = this.world.toLocal(new Point(b.x, b.y));
+      const br = this.world.toLocal(new Point(b.x + b.width, b.y + b.height));
+      minX = Math.min(minX, tl.x);
+      minY = Math.min(minY, tl.y);
+      maxX = Math.max(maxX, br.x);
+      maxY = Math.max(maxY, br.y);
+    });
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    };
+  }
+
+  private getRootNodes() {
+    return this.objectLayer.children.filter((c): c is BaseNode => c instanceof BaseNode);
+  }
+
+  private getAllBaseNodes(container: Container) {
+    const result: BaseNode[] = [];
+    const walk = (c: Container) => {
+      c.children.forEach((child) => {
+        if (child instanceof BaseNode) {
+          result.push(child);
+          if (child.children.length) {
+            walk(child);
+          }
+        }
+      });
+    };
+    walk(container);
+    return result;
+  }
+
+  private applySelectionVisibility(selected: BaseNode[]) {
+    const keep = new Set<BaseNode>();
+    const addDesc = (node: BaseNode) => {
+      keep.add(node);
+      node.children.forEach((child) => {
+        if (child instanceof BaseNode) addDesc(child);
+      });
+    };
+    const addAnc = (node: BaseNode) => {
+      let p = node.parent;
+      while (p && p instanceof BaseNode) {
+        keep.add(p);
+        p = p.parent;
+      }
+    };
+
+    selected.forEach((node) => {
+      addDesc(node);
+      addAnc(node);
+    });
+
+    const all = this.getAllBaseNodes(this.objectLayer);
+    const restore: Array<{ node: BaseNode; visible: boolean }> = [];
+    all.forEach((node) => {
+      restore.push({ node, visible: node.visible });
+      if (!keep.has(node)) node.visible = false;
+    });
+
+    return () => {
+      restore.forEach(({ node, visible }) => {
+        node.visible = visible;
+      });
+    };
+  }
+
+  private toColorNumber(color: string): number {
+    if (color.startsWith('#')) {
+      return parseInt(color.slice(1), 16);
+    }
+    if (color.startsWith('0x')) {
+      return parseInt(color.slice(2), 16);
+    }
+    return 0xffffff;
+  }
+
+  private async nodeToSvg(
+    node: BaseNode,
+    opts: {
+      invWorld: Matrix;
+      offsetX: number;
+      offsetY: number;
+      imageEmbed: 'original' | 'display' | 'max';
+      imageMaxEdge: number;
+    }
+  ) {
+    const m = node.worldTransform.clone();
+    m.prepend(opts.invWorld);
+    const transform = `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.tx} ${m.ty})`;
+    const style = this.styleToSvg(node.style);
+    const opacity = node.style.opacity !== undefined ? ` opacity="${node.style.opacity}"` : '';
+
+    switch (node.type) {
+      case 'rectangle': {
+        const n = node as any;
+        const rx = n.cornerRadius ? ` rx="${n.cornerRadius}" ry="${n.cornerRadius}"` : '';
+        return `<rect x="0" y="0" width="${n.width}" height="${n.height}"${rx} transform="${transform}"${style}${opacity}/>`;
+      }
+      case 'ellipse': {
+        const n = node as any;
+        const cx = n.width / 2;
+        const cy = n.height / 2;
+        return `<ellipse cx="${cx}" cy="${cy}" rx="${cx}" ry="${cy}" transform="${transform}"${style}${opacity}/>`;
+      }
+      case 'circle': {
+        const n = node as any;
+        return `<circle cx="0" cy="0" r="${n.radius}" transform="${transform}"${style}${opacity}/>`;
+      }
+      case 'line': {
+        const n = node as any;
+        const stroke = node.style.stroke ?? '#000000';
+        const width = node.style.strokeWidth ?? 1;
+        const op = node.style.opacity !== undefined ? ` opacity="${node.style.opacity}"` : '';
+        return `<line x1="${n.startX}" y1="${n.startY}" x2="${n.endX}" y2="${n.endY}" transform="${transform}" stroke="${stroke}" stroke-width="${width}" fill="none"${op}/>`;
+      }
+      case 'star': {
+        const n = node as any;
+        const points = this.starPointsToSvg(n);
+        return `<polygon points="${points}" transform="${transform}"${style}${opacity}/>`;
+      }
+      case 'text': {
+        const n = node as any;
+        const fontSize = n.style.fontSize ?? 20;
+        const fontFamily = n.style.fontFamily ?? 'Arial';
+        const fontWeight = n.style.fontWeight ?? 'normal';
+        const fontStyle = n.style.fontStyle ?? 'normal';
+        const fill = n.style.fill ?? '#000000';
+        return `<text x="0" y="0" dominant-baseline="hanging" font-size="${fontSize}" font-family="${fontFamily}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${fill}" transform="${transform}"${opacity}>${this.escapeXml(n.text)}</text>`;
+      }
+      case 'image': {
+        const n = node as any;
+        const href = await this.resolveImageDataUrl(n, opts.imageEmbed, opts.imageMaxEdge);
+        return `<image x="0" y="0" width="${n.width}" height="${n.height}" href="${href}" transform="${transform}"${opacity}/>`;
+      }
+      case 'group': {
+        const n = node as any;
+        const children = n.children
+          .filter((c: any) => c instanceof BaseNode)
+          .map((c: BaseNode) =>
+            this.nodeToSvg(c, {
+              invWorld: opts.invWorld,
+              offsetX: opts.offsetX,
+              offsetY: opts.offsetY,
+              imageEmbed: opts.imageEmbed,
+              imageMaxEdge: opts.imageMaxEdge,
+            })
+          );
+        return (await Promise.all(children)).join('');
+      }
+      default:
+        return '';
+    }
+  }
+
+  private starPointsToSvg(node: any) {
+    const outerRadiusX = node.width / 2;
+    const outerRadiusY = node.height / 2;
+    const ratio = node.outerRadius > 0 ? node.innerRadius / node.outerRadius : 0.5;
+    const innerRadiusX = outerRadiusX * ratio;
+    const innerRadiusY = outerRadiusY * ratio;
+    const offsetX = outerRadiusX;
+    const offsetY = outerRadiusY;
+    const pts: string[] = [];
+    for (let i = 0; i < node.points * 2; i++) {
+      const isOuter = i % 2 === 0;
+      const radiusX = isOuter ? outerRadiusX : innerRadiusX;
+      const radiusY = isOuter ? outerRadiusY : innerRadiusY;
+      const angle = (i * Math.PI) / node.points - Math.PI / 2;
+      const x = Math.cos(angle) * radiusX + offsetX;
+      const y = Math.sin(angle) * radiusY + offsetY;
+      pts.push(`${x},${y}`);
+    }
+    return pts.join(' ');
+  }
+
+  private styleToSvg(style: any) {
+    const fill = style.fill ?? 'none';
+    const stroke = style.stroke ?? 'none';
+    const strokeWidth = style.strokeWidth ?? 0;
+    return ` fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"`;
+  }
+
+  private escapeXml(text: string) {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  private async resolveImageDataUrl(
+    node: any,
+    mode: 'original' | 'display' | 'max',
+    maxEdge: number
+  ) {
+    const src = node.source ?? '';
+    if (typeof src === 'string' && src.startsWith('data:') && mode === 'original') {
+      return src;
+    }
+
+    const img = await this.loadImage(src);
+    let targetW = img.naturalWidth || img.width;
+    let targetH = img.naturalHeight || img.height;
+
+    if (mode === 'display') {
+      targetW = Math.max(1, Math.round(node.width));
+      targetH = Math.max(1, Math.round(node.height));
+    } else if (mode === 'max') {
+      const longest = Math.max(targetW, targetH);
+      if (longest > maxEdge) {
+        const scale = maxEdge / longest;
+        targetW = Math.max(1, Math.round(targetW * scale));
+        targetH = Math.max(1, Math.round(targetH * scale));
+      }
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+    }
+    return canvas.toDataURL('image/png');
+  }
+
+  private loadImage(src: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = src;
+    });
   }
 
   private toDataUrl(file: Blob): Promise<string> {

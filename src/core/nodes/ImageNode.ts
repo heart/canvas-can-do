@@ -1,4 +1,4 @@
-import { Assets, Sprite, Texture } from 'pixi.js';
+import { Sprite, Texture } from 'pixi.js';
 import { BaseNode } from './BaseNode';
 import type { Style, NodePropertyDescriptor } from './BaseNode';
 
@@ -56,10 +56,10 @@ export class ImageNode extends BaseNode {
     visible?: boolean;
     locked?: boolean;
   }): Promise<ImageNode> {
-    const { texture, revoke } = await ImageNode.loadTexture(options.source);
+    const { dataUrl, texture } = await ImageNode.prepareSource(options.source);
     const node = new ImageNode({
       texture,
-      source: options.source,
+      source: dataUrl,
       width: options.width,
       height: options.height,
       x: options.x,
@@ -70,37 +70,32 @@ export class ImageNode extends BaseNode {
       visible: options.visible,
       locked: options.locked,
     });
-    if (revoke) revoke();
     return node;
   }
 
-  private static async loadTexture(source: ImageSource): Promise<{ texture: Texture; revoke?: () => void }> {
-    if (typeof source === 'string') {
-      const texture = await Assets.load<Texture>(source);
-      if (texture) return { texture };
-      const fallback = await ImageNode.loadTextureFromUrl(source);
-      return { texture: fallback };
-    }
-
-    const url = URL.createObjectURL(source);
-    try {
-      const texture = await Assets.load<Texture>(url);
-      if (texture) return { texture, revoke: () => URL.revokeObjectURL(url) };
-      const fallback = await ImageNode.loadTextureFromUrl(url);
-      return { texture: fallback, revoke: () => URL.revokeObjectURL(url) };
-    } catch {
-      const fallback = await ImageNode.loadTextureFromUrl(url);
-      return { texture: fallback, revoke: () => URL.revokeObjectURL(url) };
-    }
+  private static async prepareSource(source: ImageSource): Promise<{ dataUrl: string; texture: Texture }> {
+    const dataUrl = await ImageNode.toDataUrl(source);
+    const texture = Texture.from(dataUrl);
+    return { dataUrl, texture };
   }
 
-  private static loadTextureFromUrl(url: string): Promise<Texture> {
+  private static async toDataUrl(source: ImageSource): Promise<string> {
+    if (typeof source === 'string') {
+      if (source.startsWith('data:')) return source;
+      const res = await fetch(source);
+      if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+      const blob = await res.blob();
+      return ImageNode.blobToDataUrl(blob);
+    }
+    return ImageNode.blobToDataUrl(source);
+  }
+
+  private static blobToDataUrl(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => resolve(Texture.from(img));
-      img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
-      img.src = url;
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error);
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(blob);
     });
   }
 
