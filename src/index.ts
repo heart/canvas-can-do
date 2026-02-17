@@ -716,6 +716,18 @@ export class CCDApp {
     await this.history?.importDocument(doc);
     this.dispatchLayerHierarchyChanged();
     this.pointerController?.clearSelection();
+    this.world.scale.set(1);
+    this.world.position.set(0, 0);
+    this.dispatchOnHost(
+      new CustomEvent('viewport:changed', {
+        detail: {
+          x: this.world.position.x,
+          y: this.world.position.y,
+          zoom: this.world.scale.x,
+          source: 'import',
+        },
+      })
+    );
   }
 
   hasDocumentContent(): boolean {

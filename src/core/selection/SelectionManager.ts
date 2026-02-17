@@ -70,8 +70,9 @@ export class SelectionManager {
 
     if (node.type === 'line') {
       const lineNode = node as LineNode;
-      const handleSize = 12;
-      const hitTolerance = 10;
+      const scale = this.getWorldScale();
+      const handleSize = 12 / scale;
+      const hitTolerance = 10 / scale;
 
       // Check start point handle
       const startX = lineNode.x + lineNode.startX;
@@ -119,10 +120,12 @@ export class SelectionManager {
       const dy = point.y - centerY;
       const ux = dx * cos + dy * sin; // inverse rotate
       const uy = -dx * sin + dy * cos;
-      const handleSize = 12; // Size of handle hit area (tap-friendly)
+      const scale = this.getWorldScale();
+      const handleSize = 12 / scale; // Size of handle hit area (tap-friendly)
+      const rotationHandleOffset = 20 / scale;
 
       // Check rotation handle first (top middle)
-      const rotateHandle = new Point(0, -height / 2 - 20);
+      const rotateHandle = new Point(0, -height / 2 - rotationHandleOffset);
       if (
         Math.abs(ux - rotateHandle.x) < handleSize &&
         Math.abs(uy - rotateHandle.y) < handleSize
@@ -377,6 +380,13 @@ export class SelectionManager {
 
     if (this.selectedNodes.size === 0) return;
 
+    const scale = this.getWorldScale();
+    const inv = 1 / scale;
+    const strokeWidth = 2 * inv;
+    const lineWidth = 1 * inv;
+    const handleRadius = 6 * inv;
+    const rotationHandleOffset = 20 * inv;
+
     // Multi-select: draw a single bounding box, no handles/rotation
     if (this.selectedNodes.size > 1) {
       const bounds = this.getSelectionBounds();
@@ -391,7 +401,7 @@ export class SelectionManager {
       this.selectionGraphics.rotation = 0;
       this.selectionGraphics.pivot.set(0, 0);
       this.selectionGraphics.rect(tl.x, tl.y, w, h);
-      this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 1 });
+      this.selectionGraphics.stroke({ color: 0x0099ff, width: strokeWidth, alpha: 1 });
       return;
     }
 
@@ -420,7 +430,7 @@ export class SelectionManager {
         // Draw line
         this.selectionGraphics.moveTo(lineNode.x + lineNode.startX, lineNode.y + lineNode.startY);
         this.selectionGraphics.lineTo(lineNode.x + lineNode.endX, lineNode.y + lineNode.endY);
-        this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 1 });
+        this.selectionGraphics.stroke({ color: 0x0099ff, width: strokeWidth, alpha: 1 });
 
         // Draw endpoints
         const endpoints = [
@@ -429,21 +439,22 @@ export class SelectionManager {
         ];
 
         for (const point of endpoints) {
-          this.selectionGraphics.circle(point.x, point.y, 6);
+          this.selectionGraphics.circle(point.x, point.y, handleRadius);
           this.selectionGraphics.fill({ color: 0xffffff });
-          this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 0.9 });
+          this.selectionGraphics.stroke({ color: 0x0099ff, width: strokeWidth, alpha: 0.9 });
         }
 
         // Center grip for moving the line
         const midX = (lineNode.x + lineNode.startX + lineNode.x + lineNode.endX) / 2;
         const midY = (lineNode.y + lineNode.startY + lineNode.y + lineNode.endY) / 2;
-        this.selectionGraphics.rect(midX - 6, midY - 6, 12, 12);
+        const half = 6 * inv;
+        this.selectionGraphics.rect(midX - half, midY - half, half * 2, half * 2);
         this.selectionGraphics.fill({ color: 0xffffff });
-        this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 0.9 });
+        this.selectionGraphics.stroke({ color: 0x0099ff, width: strokeWidth, alpha: 0.9 });
       } else {
         // Draw selection rectangle
         this.selectionGraphics.rect(-width / 2, -height / 2, width, height);
-        this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 1 });
+        this.selectionGraphics.stroke({ color: 0x0099ff, width: strokeWidth, alpha: 1 });
 
         // Draw control points
         const controlPoints = [
@@ -458,22 +469,32 @@ export class SelectionManager {
         ];
 
         for (const point of controlPoints) {
-          this.selectionGraphics.circle(point.x, point.y, 6);
+          this.selectionGraphics.circle(point.x, point.y, handleRadius);
           this.selectionGraphics.fill({ color: 0xffffff });
-          this.selectionGraphics.stroke({ color: 0x0099ff, width: 2, alpha: 0.9 });
+          this.selectionGraphics.stroke({ color: 0x0099ff, width: strokeWidth, alpha: 0.9 });
         }
 
         // Draw rotation handle line and knob (above top-middle)
-        const rotationHandleY = -height / 2 - 20;
+        const rotationHandleY = -height / 2 - rotationHandleOffset;
         const rotationX = 0;
         this.selectionGraphics.moveTo(rotationX, -height / 2);
         this.selectionGraphics.lineTo(rotationX, rotationHandleY);
-        this.selectionGraphics.stroke({ color: 0x0099ff, width: 1, alpha: 0.9 });
-        this.selectionGraphics.circle(rotationX, rotationHandleY, 5);
+        this.selectionGraphics.stroke({ color: 0x0099ff, width: lineWidth, alpha: 0.9 });
+        this.selectionGraphics.circle(rotationX, rotationHandleY, 5 * inv);
         this.selectionGraphics.fill({ color: 0xffffff });
-        this.selectionGraphics.stroke({ color: 0x0099ff, width: 1 });
+        this.selectionGraphics.stroke({ color: 0x0099ff, width: lineWidth });
       }
     }
+  }
+
+  private getWorldScale(): number {
+    const parent = this.selectionGraphics.parent as Container | null;
+    if (!parent) return 1;
+    const wt = parent.worldTransform;
+    const scaleX = Math.hypot(wt.a, wt.b);
+    const scaleY = Math.hypot(wt.c, wt.d);
+    const scale = (scaleX + scaleY) / 2 || 1;
+    return scale;
   }
 
   private dispatchLayerChanged() {

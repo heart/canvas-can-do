@@ -39,9 +39,16 @@ export class ImageNode extends BaseNode {
     this.sprite = new Sprite(options.texture);
     this.addChild(this.sprite);
 
-    this._width = options.width ?? options.texture.width;
-    this._height = options.height ?? options.texture.height;
-    this.redraw();
+    const applySize = () => {
+      this._width = options.width ?? this.sprite.texture.width;
+      this._height = options.height ?? this.sprite.texture.height;
+      this.redraw();
+    };
+
+    applySize();
+    if (this.sprite.texture.width === 0 || this.sprite.texture.height === 0) {
+      this.sprite.texture.once('update', applySize);
+    }
   }
 
   static async fromSource(options: {
@@ -75,7 +82,8 @@ export class ImageNode extends BaseNode {
 
   private static async prepareSource(source: ImageSource): Promise<{ dataUrl: string; texture: Texture }> {
     const dataUrl = await ImageNode.toDataUrl(source);
-    const texture = Texture.from(dataUrl);
+    const img = await ImageNode.loadImage(dataUrl);
+    const texture = Texture.from(img);
     return { dataUrl, texture };
   }
 
@@ -96,6 +104,16 @@ export class ImageNode extends BaseNode {
       reader.onerror = () => reject(reader.error);
       reader.onload = () => resolve(String(reader.result));
       reader.readAsDataURL(blob);
+    });
+  }
+
+  private static loadImage(src: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = src;
     });
   }
 
