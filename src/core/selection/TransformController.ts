@@ -42,7 +42,7 @@ export class TransformController {
     }
   }
 
-  updateTransform(point: Point) {
+  updateTransform(point: Point, constrainRatio = false) {
     if (!this.activeNode || !this.startPoint || !this.startState) return;
 
     const dx = point.x - this.startPoint.x;
@@ -56,7 +56,7 @@ export class TransformController {
         );
         break;
 
-      case 'rotate':
+      case 'rotate': {
         // Compute geometric center from top-left + rotation
         const w = this.startState.width;
         const h = this.startState.height;
@@ -86,13 +86,16 @@ export class TransformController {
         const offsetY = (-w / 2) * sin - (h / 2) * cos;
         this.activeNode.position.set(center.x + offsetX, center.y + offsetY);
         break;
+      }
 
-      case 'resize':
+      case 'resize': {
         if (!this.activeHandle) break;
 
         const MIN_SIZE = 10;
         const rightEdge = this.startState.x + this.startState.width;
         const bottomEdge = this.startState.y + this.startState.height;
+        const centerX = this.startState.x + this.startState.width / 2;
+        const centerY = this.startState.y + this.startState.height / 2;
 
         let newWidth = this.startState.width;
         let newHeight = this.startState.height;
@@ -119,6 +122,38 @@ export class TransformController {
           newY = this.startState.y + dy;
         }
 
+        if (constrainRatio) {
+          const ratio = this.startState.width / Math.max(1, this.startState.height);
+          const hasHorizontal = hasLeft || hasRight;
+          const hasVertical = hasTop || hasBottom;
+
+          if (hasHorizontal && hasVertical) {
+            // Corner: choose dominant delta then match other dimension
+            const targetWidth = Math.max(MIN_SIZE, newWidth);
+            const targetHeight = Math.max(MIN_SIZE, newHeight);
+            if (Math.abs(targetWidth / ratio - targetHeight) > Math.abs(targetHeight * ratio - targetWidth)) {
+              newHeight = targetWidth / ratio;
+            } else {
+              newWidth = targetHeight * ratio;
+            }
+
+            if (hasLeft) {
+              newX = rightEdge - newWidth;
+            }
+            if (hasTop) {
+              newY = bottomEdge - newHeight;
+            }
+          } else if (hasHorizontal) {
+            // Side: keep vertical center, adjust height to match ratio
+            newHeight = newWidth / ratio;
+            newY = centerY - newHeight / 2;
+          } else if (hasVertical) {
+            // Side: keep horizontal center, adjust width to match ratio
+            newWidth = newHeight * ratio;
+            newX = centerX - newWidth / 2;
+          }
+        }
+
         if (newWidth < MIN_SIZE) {
           newWidth = MIN_SIZE;
           if (hasLeft) newX = rightEdge - newWidth;
@@ -132,6 +167,7 @@ export class TransformController {
         this.activeNode.height = newHeight;
         this.activeNode.position.set(newX, newY);
         break;
+      }
     }
   }
 

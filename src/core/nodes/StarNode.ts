@@ -1,6 +1,6 @@
 import { Graphics } from 'pixi.js';
 import { BaseNode } from './BaseNode';
-import type { Style } from './BaseNode';
+import type { Style, NodePropertyDescriptor } from './BaseNode';
 
 export class StarNode extends BaseNode {
   readonly type = 'star' as const;
@@ -108,7 +108,7 @@ export class StarNode extends BaseNode {
     return this;
   }
 
-  getProps() {
+  getProps(): NodePropertyDescriptor[] {
     return [
       ...super.getProps(),
       {

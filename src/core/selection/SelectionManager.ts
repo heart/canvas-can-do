@@ -13,6 +13,7 @@ export class SelectionManager {
   private selectionGraphics: Graphics;
   private transformController: TransformController;
   private lineTransformController: LineTransformController;
+  private shiftKey = false;
 
   constructor(toolsLayer: Container) {
     this.transformController = new TransformController();
@@ -42,7 +43,7 @@ export class SelectionManager {
     if (selectedNode?.type === 'line') {
       this.lineTransformController.updateTransform(point);
     } else {
-      this.transformController.updateTransform(point);
+      this.transformController.updateTransform(point, this.shiftKey);
     }
     this.updateSelectionVisuals();
     this.dispatchPropertiesChanged();
@@ -158,6 +159,10 @@ export class SelectionManager {
 
   setMultiSelect(enabled: boolean) {
     this.isMultiSelect = enabled;
+  }
+
+  setShiftKey(enabled: boolean) {
+    this.shiftKey = enabled;
   }
 
   select(node: BaseNode | null) {

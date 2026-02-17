@@ -35,6 +35,7 @@ export class PointerController {
   private eventTarget = new EventTarget();
   private activeTextInput?: HTMLInputElement;
   private activeTextNode?: TextNode;
+  private onHistoryCapture?: () => void | Promise<void>;
 
   constructor(
     previewLayer: Container,
@@ -42,13 +43,15 @@ export class PointerController {
     toolsLayer: Container,
     onLayerChanged: () => void,
     app?: Application,
-    world?: Container
+    world?: Container,
+    onHistoryCapture?: () => void | Promise<void>
   ) {
     this.previewLayer = previewLayer;
     this.objectLayer = objectLayer;
     this.onLayerChanged = onLayerChanged;
     this.app = app;
     this.world = world;
+    this.onHistoryCapture = onHistoryCapture;
 
     this.selectionManager = new SelectionManager(toolsLayer);
 
@@ -75,6 +78,10 @@ export class PointerController {
     return this.eventTarget.dispatchEvent(event);
   }
 
+  clearSelection() {
+    this.selectionManager.clear();
+  }
+
   handleKeyDown(e: KeyboardEvent) {
     if (this.activeTextInput) {
       return;
@@ -85,6 +92,7 @@ export class PointerController {
         (this.preview as any).setShiftKey(true);
       }
       this.selectionManager.setMultiSelect(true);
+      this.selectionManager.setShiftKey(true);
     }
 
     // Delete selected nodes
@@ -92,6 +100,8 @@ export class PointerController {
       const removed = this.selectionManager.deleteSelected(this.objectLayer);
       if (removed.length) {
         e.preventDefault();
+        this.onLayerChanged();
+        this.onHistoryCapture?.();
       }
     }
 
@@ -123,6 +133,8 @@ export class PointerController {
         this.selectionManager.setMultiSelect(true);
         pasted.forEach((node) => this.selectionManager.select(node));
         this.selectionManager.setMultiSelect(false);
+        this.onLayerChanged();
+        this.onHistoryCapture?.();
       }
     }
 
@@ -136,6 +148,7 @@ export class PointerController {
           this.objectLayer.addChild(group);
         }
         this.onLayerChanged();
+        this.onHistoryCapture?.();
       }
     }
 
@@ -149,7 +162,10 @@ export class PointerController {
           this.objectLayer.addChild(child);
         }
       });
-      if (ungrouped.length) this.onLayerChanged();
+      if (ungrouped.length) {
+        this.onLayerChanged();
+        this.onHistoryCapture?.();
+      }
     }
 
     // Reorder shortcuts: Ctrl/Cmd + ArrowUp/ArrowDown
@@ -157,7 +173,10 @@ export class PointerController {
       e.preventDefault();
       const direction = e.key === 'ArrowUp' ? 1 : -1; // swap: Up moves forward, Down moves backward
       const moved = this.selectionManager.reorderSelected(this.objectLayer, direction);
-      if (moved) this.onLayerChanged();
+      if (moved) {
+        this.onLayerChanged();
+        this.onHistoryCapture?.();
+      }
     }
 
     // Nudge with Arrow keys (no Ctrl/Cmd): move selection
@@ -171,7 +190,10 @@ export class PointerController {
       const dx = e.key === 'ArrowLeft' ? -delta : e.key === 'ArrowRight' ? delta : 0;
       const dy = e.key === 'ArrowUp' ? -delta : e.key === 'ArrowDown' ? delta : 0;
       const moved = this.selectionManager.nudgeSelected(dx, dy);
-      if (moved) this.onLayerChanged();
+      if (moved) {
+        this.onLayerChanged();
+        this.onHistoryCapture?.();
+      }
     }
 
     if (e.key === ' ' && !e.repeat) {
@@ -199,6 +221,7 @@ export class PointerController {
         (this.preview as any).setShiftKey(false);
       }
       this.selectionManager.setMultiSelect(false);
+      this.selectionManager.setShiftKey(false);
     }
 
     if (e.key === ' ') {
@@ -341,6 +364,7 @@ export class PointerController {
   onPointerUp(e: PointerEvent) {
     if (this.activeTool === 'select') {
       this.selectionManager.endTransform();
+      this.onHistoryCapture?.();
     }
 
     if (this.isPanning && !e.buttons) {
@@ -592,6 +616,7 @@ export class PointerController {
       node.setText(input.value);
       this.selectionManager.select(node);
       this.onLayerChanged();
+      this.onHistoryCapture?.();
       cleanup();
     };
 

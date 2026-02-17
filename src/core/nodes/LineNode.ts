@@ -1,6 +1,6 @@
 import { Graphics } from 'pixi.js';
 import { BaseNode } from './BaseNode';
-import type { Style } from './BaseNode';
+import type { Style, NodePropertyDescriptor } from './BaseNode';
 
 export class LineNode extends BaseNode {
   readonly type = 'line' as const;
@@ -92,7 +92,7 @@ export class LineNode extends BaseNode {
     this.redraw();
   }
 
-  getProps() {
+  getProps(): NodePropertyDescriptor[] {
     const startX = this.position.x + this.startX;
     const startY = this.position.y + this.startY;
     const endX = this.position.x + this.endX;

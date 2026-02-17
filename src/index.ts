@@ -1,8 +1,10 @@
-import { Application, Container } from 'pixi.js';
+import { Application, Container, Point } from 'pixi.js';
 import { PointerController } from './PointerController';
 import type { ShapeCreatedEvent } from './events';
 import { LayerHierarchy } from './core/layers/LayerHierarchy';
 import type { BaseNode, InspectableNode } from './core/nodes';
+import { ImageNode } from './core/nodes/ImageNode';
+import { HistoryManager } from './core/history/HistoryManager';
 
 export const version = '0.0.0';
 
@@ -44,6 +46,7 @@ export class CCDApp {
 
   host?: HTMLElement;
   pointerController?: PointerController;
+  history?: HistoryManager;
 
   activeTool: ToolName = 'select';
 
@@ -82,9 +85,23 @@ export class CCDApp {
     });
 
     this.initPointerController();
+    this.history = new HistoryManager(this.objectLayer);
+    await this.history.capture();
 
     // zoom hotkeys
     window.addEventListener('keydown', this.handleZoomKeys.bind(this));
+    window.addEventListener('keydown', this.handleUndoRedoKeys.bind(this));
+
+    // drag & drop / paste images
+    this.host?.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+    this.host?.addEventListener('drop', (e) => {
+      this.handleDrop(e);
+    });
+    this.host?.addEventListener('paste', (e) => {
+      this.handlePaste(e);
+    });
   }
 
   initPointerController() {
@@ -94,7 +111,10 @@ export class CCDApp {
       this.toolsLayer,
       this.dispatchLayerHierarchyChanged.bind(this),
       this.app,
-      this.world
+      this.world,
+      async () => {
+        await this.history?.capture();
+      }
     );
 
     // Listen for shape creation events from pointer controller
@@ -103,6 +123,7 @@ export class CCDApp {
       this.objectLayer.addChild(shape);
       this.dispatchLayerHierarchyChanged();
       this.useTool('select');
+      this.history?.capture();
     }) as EventListener);
     this.pointerController.addEventListener('viewport:changed', ((e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -173,6 +194,27 @@ export class CCDApp {
     }
   }
 
+  private handleUndoRedoKeys(e: KeyboardEvent) {
+    const hasMeta = e.ctrlKey || e.metaKey;
+    if (!hasMeta) return;
+    if (this.isEditingText()) return;
+
+    if (e.key === 'z' || e.key === 'Z') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        this.redo();
+      } else {
+        this.undo();
+      }
+      return;
+    }
+
+    if (e.key === 'y' || e.key === 'Y') {
+      e.preventDefault();
+      this.redo();
+    }
+  }
+
   private setZoom(newScale: number) {
     const min = 0.1;
     const max = 5;
@@ -206,6 +248,92 @@ export class CCDApp {
         },
       })
     );
+  }
+
+  private async handleDrop(e: DragEvent) {
+    e.preventDefault();
+    if (!e.dataTransfer) return;
+
+    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+    if (!files.length) return;
+
+    const point = this.getWorldPointFromClient(e.clientX, e.clientY);
+    for (const file of files) {
+      await this.addImageFromSource(await this.toDataUrl(file), point);
+    }
+  }
+
+  private async handlePaste(e: ClipboardEvent) {
+    const items = Array.from(e.clipboardData?.items ?? []);
+    const imageItems = items.filter((item) => item.type.startsWith('image/'));
+    if (!imageItems.length) return;
+
+    e.preventDefault();
+    const point = this.getWorldPointFromClient(
+      this.app.screen.width / 2,
+      this.app.screen.height / 2,
+      true
+    );
+
+    for (const item of imageItems) {
+      const file = item.getAsFile();
+      if (file) {
+        await this.addImageFromSource(await this.toDataUrl(file), point);
+      }
+    }
+  }
+
+  private async addImageFromSource(source: string | File | Blob, point: Point) {
+    try {
+      const node = await ImageNode.fromSource({
+        source,
+        x: point.x,
+        y: point.y,
+      });
+      this.objectLayer.addChild(node);
+      this.dispatchLayerHierarchyChanged();
+      await this.history?.capture();
+    } catch (err) {
+      console.error('Failed to add image', err);
+    }
+  }
+
+  private getWorldPointFromClient(clientX: number, clientY: number, isScreenCoords = false): Point {
+    const p = new Point();
+    if (isScreenCoords) {
+      p.set(clientX, clientY);
+    } else {
+      this.app.renderer.events.mapPositionToPoint(p, clientX, clientY);
+    }
+    return this.world.toLocal(p);
+  }
+
+  private toDataUrl(file: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error);
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  private isEditingText(): boolean {
+    const el = document.activeElement;
+    if (!el) return false;
+    const tag = el.tagName.toLowerCase();
+    return tag === 'input' || tag === 'textarea' || (el as HTMLElement).isContentEditable;
+  }
+
+  async undo() {
+    await this.history?.undo();
+    this.dispatchLayerHierarchyChanged();
+    this.pointerController?.clearSelection();
+  }
+
+  async redo() {
+    await this.history?.redo();
+    this.dispatchLayerHierarchyChanged();
+    this.pointerController?.clearSelection();
   }
 
   setCursor(name: string | null) {
@@ -367,6 +495,7 @@ export class CCDApp {
       const propEvent = new CustomEvent('properties:changed', { detail: { nodes } });
       this.dispatchOnHost(propEvent);
       this.dispatchLayerHierarchyChanged();
+      this.history?.capture();
     }
   }
 

@@ -1,7 +1,7 @@
 import { Container } from 'pixi.js';
 import type { TextStyleFontWeight } from 'pixi.js';
 
-export type NodeType = 'rectangle' | 'circle' | 'text' | 'line' | 'ellipse' | 'star' | 'group';
+export type NodeType = 'rectangle' | 'circle' | 'text' | 'line' | 'ellipse' | 'star' | 'image' | 'group';
 
 export type PropertyType = 'string' | 'int' | 'float' | 'color' | 'boolean';
 

@@ -19,6 +19,7 @@ export class LayerHierarchy {
       line: 'Line',
       star: 'Star',
       text: 'Text',
+      image: 'Image',
       group: 'Group',
     };
     return typeNames[node.type] || 'Layer';

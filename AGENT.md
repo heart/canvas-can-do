@@ -121,6 +121,9 @@ This ensures:
 
 Experimental tooling (e.g. rolldown-vite) may be used **only** in demos or experiments, never as the core build dependency.
 
+## Additional Rules
+- Do not use parameter properties in constructors (e.g., `constructor(private x: X)`). Always declare class fields explicitly and assign inside the constructor.
+
 ---
 
 ## Non-Goals (Explicit)
