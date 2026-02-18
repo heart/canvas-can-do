@@ -1,3 +1,4 @@
+import './ccd.css';
 import { Application, Container, Matrix, Point, RenderTexture, Color } from 'pixi.js';
 import { PointerController } from './PointerController';
 import type { ShapeCreatedEvent } from './events';
@@ -227,7 +228,7 @@ export class CCDApp {
     }
   }
 
-  private setZoom(newScale: number) {
+  public setZoom(newScale: number) {
     const min = 0.1;
     const max = 5;
     const clamped = Math.max(min, Math.min(max, newScale));

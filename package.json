@@ -12,7 +12,8 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/canvas-can-do.js",
       "require": "./dist/canvas-can-do.umd.cjs"
-    }
+    },
+    "./style.css": "./dist/style.css"
   },
   "files": [
     "dist"
