@@ -38,6 +38,7 @@ export class PointerController {
   private eventTarget = new EventTarget();
   private activeTextInput?: HTMLInputElement;
   private onHistoryCapture?: () => void | Promise<void>;
+  private shortcutsEnabled = true;
 
   constructor(
     previewLayer: Container,
@@ -104,12 +105,23 @@ export class PointerController {
     this.updateHover(node, true);
   }
 
+  setShortcutsEnabled(enabled: boolean) {
+    this.shortcutsEnabled = enabled;
+  }
+
   getSelectionBounds() {
     if (this.selectionManager.getSelectedNodes().length === 0) return null;
     return this.selectionManager.getSelectionBounds();
   }
 
   handleKeyDown(e: KeyboardEvent) {
+    if (!this.shortcutsEnabled) {
+      return;
+    }
+    if (this.isEditingText()) {
+      return;
+    }
+
     if (this.activeTextInput) {
       return;
     }
@@ -239,6 +251,13 @@ export class PointerController {
   }
 
   handleKeyUp(e: KeyboardEvent) {
+    if (!this.shortcutsEnabled) {
+      return;
+    }
+    if (this.isEditingText()) {
+      return;
+    }
+
     if (this.activeTextInput) {
       return;
     }
@@ -554,6 +573,13 @@ export class PointerController {
 
   private snapWorldPoint(point: Point) {
     return new Point(Math.round(point.x), Math.round(point.y));
+  }
+
+  private isEditingText(): boolean {
+    const el = document.activeElement;
+    if (!el) return false;
+    const tag = el.tagName.toLowerCase();
+    return tag === 'input' || tag === 'textarea' || (el as HTMLElement).isContentEditable;
   }
 
   private updateHover(node: BaseNode | null, emitEvent: boolean) {

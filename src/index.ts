@@ -52,6 +52,7 @@ export class CCDApp extends EventTarget {
   pointerController?: PointerController;
   history?: HistoryManager;
   private ruler?: RulerOverlay;
+  private shortcutsEnabled = true;
 
   activeTool: ToolName = 'select';
 
@@ -125,6 +126,11 @@ export class CCDApp extends EventTarget {
     });
   }
 
+  public setShortcutsEnabled(enabled: boolean) {
+    this.shortcutsEnabled = enabled;
+    this.pointerController?.setShortcutsEnabled(enabled);
+  }
+
   initPointerController() {
     this.pointerController = new PointerController(
       this.previewLayer,
@@ -191,6 +197,7 @@ export class CCDApp extends EventTarget {
   }
 
   private handleZoomKeys(e: KeyboardEvent) {
+    if (!this.shortcutsEnabled) return;
     if (this.isEditingText()) return;
 
     const hasMeta = e.ctrlKey || e.metaKey;
@@ -224,6 +231,7 @@ export class CCDApp extends EventTarget {
   }
 
   private handleToolKeys(e: KeyboardEvent) {
+    if (!this.shortcutsEnabled) return;
     if (this.isEditingText()) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
 
@@ -257,6 +265,7 @@ export class CCDApp extends EventTarget {
   }
 
   private handleWheel(e: WheelEvent) {
+    if (!this.shortcutsEnabled) return;
     if (this.isEditingText()) return;
     if (!this.host) return;
 

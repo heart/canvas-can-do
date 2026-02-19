@@ -1,7 +1,7 @@
 {
   "name": "canvas-can-do",
   "private": false,
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Transform-based vector graphics editor engine for the web.",
   "type": "module",
   "main": "./dist/canvas-can-do.umd.cjs",
