@@ -380,6 +380,21 @@ export class PointerController {
     }
 
     if (this.isPanning && !e.buttons) {
+      if (this.world) {
+        const nextX = Math.round(this.world.position.x);
+        const nextY = Math.round(this.world.position.y);
+        this.world.position.set(nextX, nextY);
+        this.dispatchEvent(
+          new CustomEvent('viewport:changed', {
+            detail: {
+              x: nextX,
+              y: nextY,
+              zoom: this.world.scale.x,
+              source: 'pan',
+            },
+          })
+        );
+      }
       this.lastPan = undefined;
       this.setCursor('grab');
       return;
@@ -449,16 +464,9 @@ export class PointerController {
 
         // Check if shift is pressed to constrain the line
         if (e.shiftKey) {
-          const dx = Math.abs(this.preview.last.x - this.preview.start.x);
-          const dy = Math.abs(this.preview.last.y - this.preview.start.y);
-
-          if (dx > dy) {
-            // Make horizontal
-            endY = this.preview.start.y;
-          } else {
-            // Make vertical
-            endX = this.preview.start.x;
-          }
+          const snapped = this.snapPointTo45(this.preview.start, this.preview.last);
+          endX = snapped.x;
+          endY = snapped.y;
         }
 
         shape = new LineNode({
@@ -472,12 +480,16 @@ export class PointerController {
 
       case 'star':
         const size = Math.min(rect.w, rect.h);
+        const outerRadius = size / 2;
+        const innerRadius = outerRadius * 0.5;
+        const centerX = rect.x + rect.w / 2;
+        const centerY = rect.y + rect.h / 2;
         shape = new StarNode({
           points: 5,
-          innerRadius: size * 0.4,
-          outerRadius: size * 0.8,
-          x: rect.x,
-          y: rect.y,
+          innerRadius,
+          outerRadius,
+          x: centerX - outerRadius,
+          y: centerY - outerRadius,
           style: defaultStyle,
         });
         break;
@@ -538,6 +550,20 @@ export class PointerController {
     const globalPoint = new Point(screenX, screenY);
     // Map through world transform to local space (handles scale/position)
     return this.world.toLocal(globalPoint);
+  }
+
+  private snapPointTo45(start: Point, end: Point) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy);
+    if (length === 0) return { x: start.x, y: start.y };
+    const angle = Math.atan2(dy, dx);
+    const step = Math.PI / 4;
+    const snapped = Math.round(angle / step) * step;
+    return {
+      x: start.x + Math.cos(snapped) * length,
+      y: start.y + Math.sin(snapped) * length,
+    };
   }
 
   private findHitObject(globalPoint: Point): Container | undefined {

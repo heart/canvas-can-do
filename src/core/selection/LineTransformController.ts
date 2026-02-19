@@ -28,7 +28,7 @@ export class LineTransformController {
     };
   }
 
-  updateTransform(point: Point) {
+  updateTransform(point: Point, shiftKey = false) {
     if (!this.activeNode || !this.startPoint || !this.startState) return;
 
     const dx = point.x - this.startPoint.x;
@@ -38,12 +38,20 @@ export class LineTransformController {
       // Move the start point by updating position and keeping end point fixed in world space
       const worldEndX = this.startState.x + this.startState.endX;
       const worldEndY = this.startState.y + this.startState.endY;
+      let nextStartX = this.startState.x + dx;
+      let nextStartY = this.startState.y + dy;
 
-      this.activeNode.position.set(this.startState.x + dx, this.startState.y + dy);
+      if (shiftKey) {
+        const snapped = this.snapPointTo45(worldEndX, worldEndY, nextStartX, nextStartY);
+        nextStartX = snapped.x;
+        nextStartY = snapped.y;
+      }
+
+      this.activeNode.position.set(nextStartX, nextStartY);
 
       // Update end point relative to new position
-      this.activeNode.endX = worldEndX - (this.startState.x + dx);
-      this.activeNode.endY = worldEndY - (this.startState.y + dy);
+      this.activeNode.endX = worldEndX - nextStartX;
+      this.activeNode.endY = worldEndY - nextStartY;
 
       // Start point is always at origin relative to position
       this.activeNode.startX = 0;
@@ -53,8 +61,19 @@ export class LineTransformController {
       this.activeNode.refresh();
     } else if (this.activeHandle === 'end') {
       // Simply update end point relative to current position
-      this.activeNode.endX = this.startState.endX + dx;
-      this.activeNode.endY = this.startState.endY + dy;
+      const worldStartX = this.startState.x + this.startState.startX;
+      const worldStartY = this.startState.y + this.startState.startY;
+      let nextEndX = this.startState.x + this.startState.endX + dx;
+      let nextEndY = this.startState.y + this.startState.endY + dy;
+
+      if (shiftKey) {
+        const snapped = this.snapPointTo45(worldStartX, worldStartY, nextEndX, nextEndY);
+        nextEndX = snapped.x;
+        nextEndY = snapped.y;
+      }
+
+      this.activeNode.endX = nextEndX - this.startState.x;
+      this.activeNode.endY = nextEndY - this.startState.y;
 
       // Redraw the line
       this.activeNode.refresh();
@@ -75,5 +94,19 @@ export class LineTransformController {
     this.startPoint = null;
     this.activeHandle = null;
     this.startState = null;
+  }
+
+  private snapPointTo45(fixedX: number, fixedY: number, targetX: number, targetY: number) {
+    const dx = targetX - fixedX;
+    const dy = targetY - fixedY;
+    const length = Math.hypot(dx, dy);
+    if (length === 0) return { x: fixedX, y: fixedY };
+    const angle = Math.atan2(dy, dx);
+    const step = Math.PI / 4;
+    const snapped = Math.round(angle / step) * step;
+    return {
+      x: fixedX + Math.cos(snapped) * length,
+      y: fixedY + Math.sin(snapped) * length,
+    };
   }
 }

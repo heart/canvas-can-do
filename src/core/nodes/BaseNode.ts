@@ -4,12 +4,21 @@ import type { TextStyleFontWeight } from 'pixi.js';
 export type NodeType = 'rectangle' | 'circle' | 'text' | 'line' | 'ellipse' | 'star' | 'image' | 'group';
 
 export type PropertyType = 'string' | 'int' | 'float' | 'color' | 'boolean';
+export type PropertyGroup =
+  | 'Meta'
+  | 'Transform'
+  | 'Appearance'
+  | 'Geometry'
+  | 'Text'
+  | 'Line'
+  | 'Image';
 
 export interface NodePropertyDescriptor {
   name: string;
   key: string;
   type: PropertyType;
   value: string | number | boolean | null;
+  group?: PropertyGroup;
   desc?: string;
   min?: number;
   max?: number;
@@ -175,6 +184,23 @@ export class BaseNode extends Container {
         type: 'string',
         value: this.name,
         desc: 'Display name',
+        group: 'Meta',
+      },
+      {
+        name: 'Visible',
+        key: 'visible',
+        type: 'boolean',
+        value: this.visible,
+        desc: 'Toggle visibility',
+        group: 'Meta',
+      },
+      {
+        name: 'Locked',
+        key: 'locked',
+        type: 'boolean',
+        value: this.locked,
+        desc: 'Lock editing',
+        group: 'Meta',
       },
       {
         name: 'X',
@@ -182,6 +208,7 @@ export class BaseNode extends Container {
         type: 'float',
         value: this.position.x,
         desc: 'X position',
+        group: 'Transform',
       },
       {
         name: 'Y',
@@ -189,6 +216,7 @@ export class BaseNode extends Container {
         type: 'float',
         value: this.position.y,
         desc: 'Y position',
+        group: 'Transform',
       },
       {
         name: 'Width',
@@ -197,6 +225,7 @@ export class BaseNode extends Container {
         value: this.width,
         desc: 'Width',
         min: 0,
+        group: 'Transform',
       },
       {
         name: 'Height',
@@ -205,6 +234,7 @@ export class BaseNode extends Container {
         value: this.height,
         desc: 'Height',
         min: 0,
+        group: 'Transform',
       },
       {
         name: 'Scale X',
@@ -212,6 +242,7 @@ export class BaseNode extends Container {
         type: 'float',
         value: this.scale.x,
         desc: 'Horizontal scale',
+        group: 'Transform',
       },
       {
         name: 'Scale Y',
@@ -219,6 +250,7 @@ export class BaseNode extends Container {
         type: 'float',
         value: this.scale.y,
         desc: 'Vertical scale',
+        group: 'Transform',
       },
       {
         name: 'Rotation',
@@ -226,20 +258,7 @@ export class BaseNode extends Container {
         type: 'float',
         value: this.rotation,
         desc: 'Rotation (radians)',
-      },
-      {
-        name: 'Visible',
-        key: 'visible',
-        type: 'boolean',
-        value: this.visible,
-        desc: 'Toggle visibility',
-      },
-      {
-        name: 'Locked',
-        key: 'locked',
-        type: 'boolean',
-        value: this.locked,
-        desc: 'Lock editing',
+        group: 'Transform',
       },
       {
         name: 'Fill',
@@ -247,6 +266,7 @@ export class BaseNode extends Container {
         type: 'color',
         value: this.toColorString(this.style.fill),
         desc: 'Fill color',
+        group: 'Appearance',
       },
       {
         name: 'Stroke',
@@ -254,6 +274,7 @@ export class BaseNode extends Container {
         type: 'color',
         value: this.toColorString(this.style.stroke),
         desc: 'Stroke color',
+        group: 'Appearance',
       },
       {
         name: 'Stroke Width',
@@ -262,6 +283,7 @@ export class BaseNode extends Container {
         value: this.style.strokeWidth ?? 1,
         desc: 'Stroke width',
         min: 0,
+        group: 'Appearance',
       },
       {
         name: 'Opacity',
@@ -272,6 +294,7 @@ export class BaseNode extends Container {
         min: 0,
         max: 1,
         step: 0.01,
+        group: 'Appearance',
       },
     ];
   }

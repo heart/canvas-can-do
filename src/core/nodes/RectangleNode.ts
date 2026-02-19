@@ -95,6 +95,7 @@ export class RectangleNode extends BaseNode {
         value: this.cornerRadius ?? 0,
         desc: 'Rounded corner radius',
         min: 0,
+        group: 'Geometry',
       },
     ];
   }

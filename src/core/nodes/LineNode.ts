@@ -99,10 +99,38 @@ export class LineNode extends BaseNode {
     const endY = this.position.y + this.endY;
     return [
       ...super.getProps(),
-      { name: 'Start X', key: 'startX', type: 'float', value: startX, desc: 'Start X position' },
-      { name: 'Start Y', key: 'startY', type: 'float', value: startY, desc: 'Start Y position' },
-      { name: 'End X', key: 'endX', type: 'float', value: endX, desc: 'End X position' },
-      { name: 'End Y', key: 'endY', type: 'float', value: endY, desc: 'End Y position' },
+      {
+        name: 'Start X',
+        key: 'startX',
+        type: 'float',
+        value: startX,
+        desc: 'Start X position',
+        group: 'Line',
+      },
+      {
+        name: 'Start Y',
+        key: 'startY',
+        type: 'float',
+        value: startY,
+        desc: 'Start Y position',
+        group: 'Line',
+      },
+      {
+        name: 'End X',
+        key: 'endX',
+        type: 'float',
+        value: endX,
+        desc: 'End X position',
+        group: 'Line',
+      },
+      {
+        name: 'End Y',
+        key: 'endY',
+        type: 'float',
+        value: endY,
+        desc: 'End Y position',
+        group: 'Line',
+      },
     ];
   }
 

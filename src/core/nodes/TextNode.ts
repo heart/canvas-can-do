@@ -98,6 +98,7 @@ export class TextNode extends BaseNode {
         value: this.style.fontSize ?? 20,
         desc: 'Font size',
         min: 1,
+        group: 'Text',
       },
       {
         name: 'Font Family',
@@ -105,6 +106,7 @@ export class TextNode extends BaseNode {
         type: 'string',
         value: this.style.fontFamily ?? 'Arial',
         desc: 'Font family',
+        group: 'Text',
       },
       {
         name: 'Font Weight',
@@ -112,6 +114,7 @@ export class TextNode extends BaseNode {
         type: 'string',
         value: (this.style.fontWeight ?? 'normal') as string,
         desc: 'Font weight (e.g. 300, 400, 600, bold, normal)',
+        group: 'Text',
       },
       {
         name: 'Font Style',
@@ -119,6 +122,7 @@ export class TextNode extends BaseNode {
         type: 'string',
         value: this.style.fontStyle ?? 'normal',
         desc: 'Font style (normal, italic, oblique)',
+        group: 'Text',
       },
       {
         name: 'Text',
@@ -126,6 +130,7 @@ export class TextNode extends BaseNode {
         type: 'string',
         value: this.text,
         desc: 'Text content',
+        group: 'Text',
       },
     ];
   }

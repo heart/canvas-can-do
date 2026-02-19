@@ -86,6 +86,7 @@ export class CircleNode extends BaseNode {
         value: this.radius,
         desc: 'Circle radius',
         min: 0,
+        group: 'Geometry',
       },
     ];
   }

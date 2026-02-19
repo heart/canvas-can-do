@@ -8,8 +8,8 @@ export class PreviewStar extends PreviewBase {
     const centerX = r.x + r.w / 2;
     const centerY = r.y + r.h / 2;
     const points = 5;
-    const innerRadius = size * 0.4;
-    const outerRadius = size * 0.8;
+    const outerRadius = size / 2;
+    const innerRadius = outerRadius * 0.5;
 
     this.g.clear();
 

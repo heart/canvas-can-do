@@ -154,6 +154,7 @@ export class ImageNode extends BaseNode {
         type: 'string',
         value: typeof this.source === 'string' ? this.source : '',
         desc: 'Image source',
+        group: 'Image',
       },
     ];
   }

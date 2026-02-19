@@ -41,7 +41,7 @@ export class SelectionManager {
     if (this.selectedNodes.size !== 1) return;
     const selectedNode = Array.from(this.selectedNodes)[0];
     if (selectedNode?.type === 'line') {
-      this.lineTransformController.updateTransform(point);
+      this.lineTransformController.updateTransform(point, this.shiftKey);
     } else {
       this.transformController.updateTransform(point, this.shiftKey);
     }

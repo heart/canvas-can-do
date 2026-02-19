@@ -16,21 +16,28 @@ export class PreviewLine extends PreviewBase {
     let endY = b.y;
 
     if (this.shiftKey) {
-      const dx = Math.abs(b.x - a.x);
-      const dy = Math.abs(b.y - a.y);
-      
-      if (dx > dy) {
-        // Make horizontal
-        endY = a.y;
-      } else {
-        // Make vertical
-        endX = a.x;
-      }
+      const snapped = this.snapPointTo45(a, b);
+      endX = snapped.x;
+      endY = snapped.y;
     }
 
     this.g.clear();
     this.g.moveTo(a.x, a.y);
     this.g.lineTo(endX, endY);
     this.g.stroke({ color: 0x0be666, alpha: 0.8, width: 2 });
+  }
+
+  private snapPointTo45(start: Point, end: Point) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy);
+    if (length === 0) return { x: start.x, y: start.y };
+    const angle = Math.atan2(dy, dx);
+    const step = Math.PI / 4;
+    const snapped = Math.round(angle / step) * step;
+    return {
+      x: start.x + Math.cos(snapped) * length,
+      y: start.y + Math.sin(snapped) * length,
+    };
   }
 }

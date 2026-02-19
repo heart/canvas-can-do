@@ -177,6 +177,8 @@ export class CCDApp {
   }
 
   private handleZoomKeys(e: KeyboardEvent) {
+    if (this.isEditingText()) return;
+
     const hasMeta = e.ctrlKey || e.metaKey;
     const key = e.key;
 
@@ -194,8 +196,8 @@ export class CCDApp {
       return;
     }
 
-    // absolute zoom with digits (no ctrl/cmd)
-    if (!hasMeta) {
+    // absolute zoom with digits (ctrl/cmd + number)
+    if (hasMeta) {
       if (key === '0') {
         e.preventDefault();
         this.setZoom(1);
@@ -248,14 +250,16 @@ export class CCDApp {
     // apply new scale
     this.world.scale.set(clamped);
 
-    // reposition so center stays fixed
-    this.world.position.set(center.x - worldX * clamped, center.y - worldY * clamped);
+    // reposition so center stays fixed (snap to integer pixels)
+    const nextX = Math.round(center.x - worldX * clamped);
+    const nextY = Math.round(center.y - worldY * clamped);
+    this.world.position.set(nextX, nextY);
 
     this.dispatchOnHost(
       new CustomEvent('viewport:changed', {
         detail: {
-          x: this.world.position.x,
-          y: this.world.position.y,
+          x: nextX,
+          y: nextY,
           zoom: this.world.scale.x,
           source: 'zoom',
         },
@@ -800,7 +804,46 @@ export class CCDApp {
       const node = this.findNodeById(this.objectLayer, id);
       if (!node) return;
 
+      if (node.type === 'star') {
+        const n: any = node as any;
+        const hasPoints = Object.prototype.hasOwnProperty.call(props, 'points');
+        const hasInner = Object.prototype.hasOwnProperty.call(props, 'innerRadius');
+        const hasOuter = Object.prototype.hasOwnProperty.call(props, 'outerRadius');
+        const hasRatio = Object.prototype.hasOwnProperty.call(props, 'innerRatio');
+        if (hasPoints || hasInner || hasOuter || hasRatio) {
+          const prevRatio = n.outerRadius > 0 ? n.innerRadius / n.outerRadius : 0.5;
+          if (hasPoints) n.points = Number((props as any).points);
+          if (hasOuter) {
+            const nextOuter = Number((props as any).outerRadius);
+            n.outerRadius = nextOuter;
+            node.width = nextOuter * 2;
+            node.height = nextOuter * 2;
+            if (!hasInner && !hasRatio) {
+              n.innerRadius = nextOuter * prevRatio;
+            }
+          }
+          if (hasInner) {
+            n.innerRadius = Number((props as any).innerRadius);
+          }
+          if (hasRatio) {
+            const raw = Number((props as any).innerRatio);
+            const ratio = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : prevRatio;
+            n.innerRadius = n.outerRadius * ratio;
+          }
+          n.redraw?.();
+        }
+      }
+
       Object.entries(props).forEach(([key, value]) => {
+        if (
+          node.type === 'star' &&
+          (key === 'points' ||
+            key === 'innerRadius' ||
+            key === 'outerRadius' ||
+            key === 'innerRatio')
+        ) {
+          return;
+        }
         switch (key) {
           case 'name':
             node.name = value as string;
@@ -863,20 +906,6 @@ export class CCDApp {
           case 'text':
             if ('setText' in node) {
               (node as any).setText(value as string);
-            }
-            break;
-          case 'points':
-          case 'innerRadius':
-          case 'outerRadius':
-            if (node.type === 'star') {
-              if (key === 'points') (node as any).points = Number(value);
-              if (key === 'innerRadius') (node as any).innerRadius = Number(value);
-              if (key === 'outerRadius') {
-                (node as any).outerRadius = Number(value);
-                node.width = Number(value) * 2;
-                node.height = Number(value) * 2;
-              }
-              (node as any).redraw?.();
             }
             break;
           case 'startX':
