@@ -104,6 +104,10 @@ export class CCDApp {
     // zoom hotkeys
     window.addEventListener('keydown', this.handleZoomKeys.bind(this));
     window.addEventListener('keydown', this.handleUndoRedoKeys.bind(this));
+    window.addEventListener('keydown', this.handleToolKeys.bind(this));
+
+    // wheel: pan and pinch/ctrl zoom
+    this.app.canvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
 
     // drag & drop / paste images
     this.host?.addEventListener('dragover', (e) => {
@@ -209,6 +213,74 @@ export class CCDApp {
     }
   }
 
+  private handleToolKeys(e: KeyboardEvent) {
+    if (this.isEditingText()) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    const key = e.key.toLowerCase();
+    switch (key) {
+      case 'g':
+        e.preventDefault();
+        this.useTool('select');
+        break;
+      case 'o':
+        e.preventDefault();
+        this.useTool('ellipse');
+        break;
+      case 'r':
+        e.preventDefault();
+        this.useTool('rectangle');
+        break;
+      case 'l':
+        e.preventDefault();
+        this.useTool('line');
+        break;
+      case 's':
+        e.preventDefault();
+        this.useTool('star');
+        break;
+      case 't':
+        e.preventDefault();
+        this.useTool('text');
+        break;
+    }
+  }
+
+  private handleWheel(e: WheelEvent) {
+    if (this.isEditingText()) return;
+    if (!this.host) return;
+
+    const { deltaX, deltaY } = this.normalizeWheel(e);
+    const hasMeta = e.ctrlKey || e.metaKey;
+
+    if (hasMeta) {
+      e.preventDefault();
+      const point = new Point();
+      this.app.renderer.events.mapPositionToPoint(point, e.clientX, e.clientY);
+      const zoomFactor = Math.pow(1.0015, -deltaY);
+      this.setZoomAt(this.world.scale.x * zoomFactor, point);
+      return;
+    }
+
+    if (deltaX !== 0 || deltaY !== 0) {
+      e.preventDefault();
+      this.panBy(-deltaX, -deltaY, 'wheel');
+    }
+  }
+
+  private normalizeWheel(e: WheelEvent) {
+    let dx = e.deltaX;
+    let dy = e.deltaY;
+    if (e.deltaMode === 1) {
+      dx *= 16;
+      dy *= 16;
+    } else if (e.deltaMode === 2) {
+      dx *= this.app.screen.width;
+      dy *= this.app.screen.height;
+    }
+    return { deltaX: dx, deltaY: dy };
+  }
+
   private handleUndoRedoKeys(e: KeyboardEvent) {
     const hasMeta = e.ctrlKey || e.metaKey;
     if (!hasMeta) return;
@@ -262,6 +334,50 @@ export class CCDApp {
           y: nextY,
           zoom: this.world.scale.x,
           source: 'zoom',
+        },
+      })
+    );
+  }
+
+  public setZoomAt(newScale: number, center: Point) {
+    const min = 0.1;
+    const max = 5;
+    const clamped = Math.max(min, Math.min(max, newScale));
+
+    const oldScale = this.world.scale.x;
+    if (clamped === oldScale) return;
+
+    const worldX = (center.x - this.world.position.x) / oldScale;
+    const worldY = (center.y - this.world.position.y) / oldScale;
+
+    this.world.scale.set(clamped);
+
+    const nextX = Math.round(center.x - worldX * clamped);
+    const nextY = Math.round(center.y - worldY * clamped);
+    this.world.position.set(nextX, nextY);
+
+    this.dispatchOnHost(
+      new CustomEvent('viewport:changed', {
+        detail: {
+          x: nextX,
+          y: nextY,
+          zoom: this.world.scale.x,
+          source: 'zoom',
+        },
+      })
+    );
+  }
+
+  public panBy(dx: number, dy: number, source: 'pan' | 'wheel' = 'pan') {
+    this.world.position.x += dx;
+    this.world.position.y += dy;
+    this.dispatchOnHost(
+      new CustomEvent('viewport:changed', {
+        detail: {
+          x: this.world.position.x,
+          y: this.world.position.y,
+          zoom: this.world.scale.x,
+          source,
         },
       })
     );
