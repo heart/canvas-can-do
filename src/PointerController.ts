@@ -552,7 +552,7 @@ export class PointerController {
     return this.world.toLocal(globalPoint);
   }
 
-  private snapPointTo45(start: Point, end: Point) {
+  private snapPointTo45(start: { x: number; y: number }, end: { x: number; y: number }) {
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     const length = Math.hypot(dx, dy);
