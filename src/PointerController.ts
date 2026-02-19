@@ -46,7 +46,8 @@ export class PointerController {
     onLayerChanged: () => void,
     app?: Application,
     world?: Container,
-    onHistoryCapture?: () => void | Promise<void>
+    onHistoryCapture?: () => void | Promise<void>,
+    eventTarget?: EventTarget
   ) {
     this.previewLayer = previewLayer;
     this.objectLayer = objectLayer;
@@ -56,7 +57,7 @@ export class PointerController {
     this.world = world;
     this.onHistoryCapture = onHistoryCapture;
 
-    this.selectionManager = new SelectionManager(toolsLayer);
+    this.selectionManager = new SelectionManager(toolsLayer, eventTarget ?? this.eventTarget);
     this.hoverGraphics = new Graphics();
     this.toolsLayer.addChild(this.hoverGraphics);
 

@@ -38,7 +38,7 @@ export const TOOL_CURSOR: Record<ToolName, string | null> = {
   pan: 'grab',
 };
 
-export class CCDApp {
+export class CCDApp extends EventTarget {
   app = new Application();
 
   world = new Container();
@@ -54,6 +54,10 @@ export class CCDApp {
   private ruler?: RulerOverlay;
 
   activeTool: ToolName = 'select';
+
+  constructor() {
+    super();
+  }
 
   async init(host: HTMLElement) {
     await this.app.init({
@@ -131,7 +135,8 @@ export class CCDApp {
       this.world,
       async () => {
         await this.history?.capture();
-      }
+      },
+      this
     );
 
     // Listen for shape creation events from pointer controller
@@ -1103,11 +1108,7 @@ export class CCDApp {
   }
 
   private dispatchOnHost(event: Event) {
-    if (this.host) {
-      this.host.dispatchEvent(event);
-    } else {
-      window.dispatchEvent(event);
-    }
+    this.dispatchEvent(event);
   }
 
   destroy() {

@@ -14,10 +14,12 @@ export class SelectionManager {
   private transformController: TransformController;
   private lineTransformController: LineTransformController;
   private shiftKey = false;
+  private eventTarget: EventTarget;
 
-  constructor(toolsLayer: Container) {
+  constructor(toolsLayer: Container, eventTarget: EventTarget) {
     this.transformController = new TransformController();
     this.lineTransformController = new LineTransformController();
+    this.eventTarget = eventTarget;
 
     this.selectionGraphics = new Graphics();
     toolsLayer.addChild(this.selectionGraphics);
@@ -242,7 +244,7 @@ export class SelectionManager {
         selectedIds: Array.from(this.selectedNodes).map((n) => n.id),
       },
     });
-    window.dispatchEvent(event);
+    this.eventTarget.dispatchEvent(event);
     this.dispatchSelectionChanged();
 
     return group;
@@ -293,7 +295,7 @@ export class SelectionManager {
           selectedIds: Array.from(this.selectedNodes).map((n) => n.id),
         },
       });
-      window.dispatchEvent(event);
+      this.eventTarget.dispatchEvent(event);
     }
     this.dispatchSelectionChanged();
 
@@ -512,7 +514,7 @@ export class SelectionManager {
     if (parent) {
       const hierarchy = LayerHierarchy.getHierarchy(parent);
       const selectedIds = Array.from(this.selectedNodes).map((n) => n.id);
-      window.dispatchEvent(
+      this.eventTarget.dispatchEvent(
         new CustomEvent('layer:changed', {
           detail: { hierarchy, selectedIds },
         })
@@ -528,7 +530,7 @@ export class SelectionManager {
     const event = new CustomEvent('properties:changed', {
       detail: { nodes },
     });
-    window.dispatchEvent(event);
+    this.eventTarget.dispatchEvent(event);
   }
 
   private dispatchSelectionChanged() {
@@ -540,6 +542,6 @@ export class SelectionManager {
     const event = new CustomEvent('selection:changed', {
       detail: { nodes, selectedIds },
     });
-    window.dispatchEvent(event);
+    this.eventTarget.dispatchEvent(event);
   }
 }
