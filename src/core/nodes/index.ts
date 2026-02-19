@@ -6,4 +6,10 @@ export * from './ImageNode';
 export * from './LineNode';
 export * from './EllipseNode';
 export * from './StarNode';
-export type { NodePropertyDescriptor, InspectableNode, PropertyType, PropertiesChangedEvent } from './BaseNode';
+export type {
+  NodePropertyDescriptor,
+  InspectableNode,
+  PropertyType,
+  PropertiesChangedEvent,
+  SelectionChangedEvent
+} from './BaseNode';

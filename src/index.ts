@@ -147,6 +147,11 @@ export class CCDApp {
       const evt = new CustomEvent('viewport:changed', { detail });
       this.dispatchOnHost(evt);
     }) as EventListener);
+    this.pointerController.addEventListener('hover:changed', ((e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const evt = new CustomEvent('hover:changed', { detail });
+      this.dispatchOnHost(evt);
+    }) as EventListener);
 
     this.host?.addEventListener('pointerdown', (e) => {
       //this.host.setPointerCapture(e.pointerId);
@@ -906,6 +911,23 @@ export class CCDApp {
       detail: { hierarchy, selectedIds: [] },
     });
     this.dispatchOnHost(event);
+  }
+
+  public selectNodeById(id: string | null) {
+    const node = id ? this.findNodeById(this.objectLayer, id) : null;
+    this.pointerController?.selectNode(node);
+  }
+
+  public selectNodesById(ids: string[]) {
+    const nodes = ids
+      .map((id) => this.findNodeById(this.objectLayer, id))
+      .filter((n): n is BaseNode => n !== null);
+    this.pointerController?.selectNodes(nodes);
+  }
+
+  public setHoverById(id: string | null) {
+    const node = id ? this.findNodeById(this.objectLayer, id) : null;
+    this.pointerController?.setHoverNode(node);
   }
 
   /**

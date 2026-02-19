@@ -7,7 +7,7 @@ import { SelectionManager } from './core/selection/SelectionManager';
 import { BaseNode } from './core/nodes/BaseNode';
 
 import type { ToolName } from './index';
-import { Container, Point } from 'pixi.js';
+import { Container, Point, Graphics } from 'pixi.js';
 import { RectangleNode } from './core/nodes/RectangleNode';
 import { EllipseNode } from './core/nodes/EllipseNode';
 import { LineNode } from './core/nodes/LineNode';
@@ -24,8 +24,11 @@ export class PointerController {
 
   //objectLayer is the layer that we draw the real object here
   private objectLayer: Container;
+  private toolsLayer: Container;
 
   private selectionManager: SelectionManager;
+  private hoverGraphics: Graphics;
+  private hoveredNode: BaseNode | null = null;
   private clipboard: BaseNode[] = [];
   private onLayerChanged: () => void;
   private isPanning = false;
@@ -47,12 +50,15 @@ export class PointerController {
   ) {
     this.previewLayer = previewLayer;
     this.objectLayer = objectLayer;
+    this.toolsLayer = toolsLayer;
     this.onLayerChanged = onLayerChanged;
     this.app = app;
     this.world = world;
     this.onHistoryCapture = onHistoryCapture;
 
     this.selectionManager = new SelectionManager(toolsLayer);
+    this.hoverGraphics = new Graphics();
+    this.toolsLayer.addChild(this.hoverGraphics);
 
     this.preview = new PreviewRect(previewLayer);
   }
@@ -83,6 +89,18 @@ export class PointerController {
 
   getSelectedNodes() {
     return this.selectionManager.getSelectedNodes();
+  }
+
+  selectNode(node: BaseNode | null) {
+    this.selectionManager.select(node);
+  }
+
+  selectNodes(nodes: BaseNode[]) {
+    this.selectionManager.selectMany(nodes);
+  }
+
+  setHoverNode(node: BaseNode | null) {
+    this.updateHover(node, true);
   }
 
   getSelectionBounds() {
@@ -346,26 +364,7 @@ export class PointerController {
       // Otherwise show hover state - search from top to bottom of z-order
       const hitObject = this.findHitObject(globalPoint);
 
-      if (hitObject) {
-        const bounds = hitObject.getBounds();
-        const topLeft = this.world
-          ? this.world.toLocal(new Point(bounds.x, bounds.y))
-          : new Point(bounds.x, bounds.y);
-        const bottomRight = this.world
-          ? this.world.toLocal(new Point(bounds.x + bounds.width, bounds.y + bounds.height))
-          : new Point(bounds.x + bounds.width, bounds.y + bounds.height);
-        const w = bottomRight.x - topLeft.x;
-        const h = bottomRight.y - topLeft.y;
-        this.preview.graphics.clear();
-        this.preview.graphics.rect(topLeft.x, topLeft.y, w, h);
-        this.preview.graphics.stroke({ color: 0x0be666, alpha: 0.8, width: 1 });
-
-        if (!this.preview.graphics.parent) {
-          this.previewLayer.addChild(this.preview.graphics);
-        }
-      } else {
-        this.preview.graphics.clear();
-      }
+      this.updateHover((hitObject as BaseNode) || null, true);
     } else if (
       ['rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
     ) {
@@ -554,6 +553,34 @@ export class PointerController {
 
   private snapWorldPoint(point: Point) {
     return new Point(Math.round(point.x), Math.round(point.y));
+  }
+
+  private updateHover(node: BaseNode | null, emitEvent: boolean) {
+    if (this.hoveredNode === node) return;
+    this.hoveredNode = node;
+
+    this.hoverGraphics.clear();
+    if (node) {
+      const bounds = node.getBounds();
+      const topLeft = this.world
+        ? this.world.toLocal(new Point(bounds.x, bounds.y))
+        : new Point(bounds.x, bounds.y);
+      const bottomRight = this.world
+        ? this.world.toLocal(new Point(bounds.x + bounds.width, bounds.y + bounds.height))
+        : new Point(bounds.x + bounds.width, bounds.y + bounds.height);
+      const w = bottomRight.x - topLeft.x;
+      const h = bottomRight.y - topLeft.y;
+      this.hoverGraphics.rect(topLeft.x, topLeft.y, w, h);
+      this.hoverGraphics.stroke({ color: 0x0be666, alpha: 0.8, width: 1 });
+    }
+
+    if (emitEvent) {
+      this.dispatchEvent(
+        new CustomEvent('hover:changed', {
+          detail: { id: node?.id ?? null },
+        })
+      );
+    }
   }
 
   private snapPointTo45(start: { x: number; y: number }, end: { x: number; y: number }) {

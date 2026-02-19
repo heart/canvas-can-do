@@ -36,6 +36,11 @@ export type PropertiesChangedEvent = CustomEvent<{
   nodes: InspectableNode[];
 }>;
 
+export type SelectionChangedEvent = CustomEvent<{
+  nodes: InspectableNode[];
+  selectedIds: string[];
+}>;
+
 export interface Style {
   fill?: string;
   stroke?: string;
@@ -312,5 +317,6 @@ export class BaseNode extends Container {
 declare global {
   interface WindowEventMap {
     'properties:changed': PropertiesChangedEvent;
+    'selection:changed': SelectionChangedEvent;
   }
 }

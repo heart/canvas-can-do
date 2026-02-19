@@ -184,7 +184,17 @@ export class SelectionManager {
 
     this.updateSelectionVisuals();
     this.dispatchLayerChanged();
-    this.dispatchPropertiesChanged();
+    this.dispatchSelectionChanged();
+  }
+
+  selectMany(nodes: BaseNode[]) {
+    this.selectedNodes.clear();
+    nodes.forEach((n) => {
+      if (n) this.selectedNodes.add(n);
+    });
+    this.updateSelectionVisuals();
+    this.dispatchLayerChanged();
+    this.dispatchSelectionChanged();
   }
 
   createGroup() {
@@ -233,7 +243,7 @@ export class SelectionManager {
       },
     });
     window.dispatchEvent(event);
-    this.dispatchPropertiesChanged();
+    this.dispatchSelectionChanged();
 
     return group;
   }
@@ -285,7 +295,7 @@ export class SelectionManager {
       });
       window.dispatchEvent(event);
     }
-    this.dispatchPropertiesChanged();
+    this.dispatchSelectionChanged();
 
     return children;
   }
@@ -360,7 +370,7 @@ export class SelectionManager {
     this.selectedNodes.clear();
     this.updateSelectionVisuals();
     this.dispatchLayerChanged();
-    this.dispatchPropertiesChanged();
+    this.dispatchSelectionChanged();
   }
 
   nudgeSelected(dx: number, dy: number): boolean {
@@ -517,6 +527,18 @@ export class SelectionManager {
 
     const event = new CustomEvent('properties:changed', {
       detail: { nodes },
+    });
+    window.dispatchEvent(event);
+  }
+
+  private dispatchSelectionChanged() {
+    const nodes: InspectableNode[] = Array.from(this.selectedNodes)
+      .map((n) => (typeof (n as any).getInspectable === 'function' ? (n as any).getInspectable() : null))
+      .filter((n): n is InspectableNode => n !== null);
+    const selectedIds = Array.from(this.selectedNodes).map((n) => n.id);
+
+    const event = new CustomEvent('selection:changed', {
+      detail: { nodes, selectedIds },
     });
     window.dispatchEvent(event);
   }
