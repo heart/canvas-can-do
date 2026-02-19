@@ -299,7 +299,7 @@ export class PointerController {
     } else if (
       ['rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
     ) {
-      this.preview.begin(point);
+      this.preview.begin(this.snapWorldPoint(point));
     }
   }
 
@@ -369,7 +369,7 @@ export class PointerController {
     } else if (
       ['rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
     ) {
-      this.preview.update(point);
+      this.preview.update(this.snapWorldPoint(point));
     }
   }
 
@@ -550,6 +550,10 @@ export class PointerController {
     const globalPoint = new Point(screenX, screenY);
     // Map through world transform to local space (handles scale/position)
     return this.world.toLocal(globalPoint);
+  }
+
+  private snapWorldPoint(point: Point) {
+    return new Point(Math.round(point.x), Math.round(point.y));
   }
 
   private snapPointTo45(start: { x: number; y: number }, end: { x: number; y: number }) {

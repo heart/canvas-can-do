@@ -205,7 +205,7 @@ export class BaseNode extends Container {
       {
         name: 'X',
         key: 'x',
-        type: 'float',
+        type: 'int',
         value: this.position.x,
         desc: 'X position',
         group: 'Transform',
@@ -213,7 +213,7 @@ export class BaseNode extends Container {
       {
         name: 'Y',
         key: 'y',
-        type: 'float',
+        type: 'int',
         value: this.position.y,
         desc: 'Y position',
         group: 'Transform',
@@ -221,7 +221,7 @@ export class BaseNode extends Container {
       {
         name: 'Width',
         key: 'width',
-        type: 'float',
+        type: 'int',
         value: this.width,
         desc: 'Width',
         min: 0,
@@ -230,7 +230,7 @@ export class BaseNode extends Container {
       {
         name: 'Height',
         key: 'height',
-        type: 'float',
+        type: 'int',
         value: this.height,
         desc: 'Height',
         min: 0,

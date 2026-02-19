@@ -51,8 +51,8 @@ export class TransformController {
     switch (this.mode) {
       case 'move':
         this.activeNode.position.set(
-          this.startState.x + dx,
-          this.startState.y + dy
+          Math.round(this.startState.x + dx),
+          Math.round(this.startState.y + dy)
         );
         break;
 
@@ -84,7 +84,10 @@ export class TransformController {
         const sin = Math.sin(newRotation);
         const offsetX = (-w / 2) * cos + (h / 2) * sin;
         const offsetY = (-w / 2) * sin - (h / 2) * cos;
-        this.activeNode.position.set(center.x + offsetX, center.y + offsetY);
+        this.activeNode.position.set(
+          Math.round(center.x + offsetX),
+          Math.round(center.y + offsetY)
+        );
         break;
       }
 
@@ -163,9 +166,9 @@ export class TransformController {
           if (hasTop) newY = bottomEdge - newHeight;
         }
 
-        this.activeNode.width = newWidth;
-        this.activeNode.height = newHeight;
-        this.activeNode.position.set(newX, newY);
+        this.activeNode.width = Math.round(newWidth);
+        this.activeNode.height = Math.round(newHeight);
+        this.activeNode.position.set(Math.round(newX), Math.round(newY));
         break;
       }
     }

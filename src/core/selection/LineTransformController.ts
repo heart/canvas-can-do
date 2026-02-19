@@ -47,11 +47,13 @@ export class LineTransformController {
         nextStartY = snapped.y;
       }
 
-      this.activeNode.position.set(nextStartX, nextStartY);
+      this.activeNode.position.set(Math.round(nextStartX), Math.round(nextStartY));
 
       // Update end point relative to new position
-      this.activeNode.endX = worldEndX - nextStartX;
-      this.activeNode.endY = worldEndY - nextStartY;
+      const snappedStartX = Math.round(nextStartX);
+      const snappedStartY = Math.round(nextStartY);
+      this.activeNode.endX = Math.round(worldEndX) - snappedStartX;
+      this.activeNode.endY = Math.round(worldEndY) - snappedStartY;
 
       // Start point is always at origin relative to position
       this.activeNode.startX = 0;
@@ -72,14 +74,22 @@ export class LineTransformController {
         nextEndY = snapped.y;
       }
 
-      this.activeNode.endX = nextEndX - this.startState.x;
-      this.activeNode.endY = nextEndY - this.startState.y;
+      const snappedEndX = Math.round(nextEndX);
+      const snappedEndY = Math.round(nextEndY);
+      const snappedStartX = Math.round(this.startState.x);
+      const snappedStartY = Math.round(this.startState.y);
+      this.activeNode.position.set(snappedStartX, snappedStartY);
+      this.activeNode.endX = snappedEndX - snappedStartX;
+      this.activeNode.endY = snappedEndY - snappedStartY;
 
       // Redraw the line
       this.activeNode.refresh();
     } else if (this.activeHandle === 'move') {
       // Move the entire line by updating position only
-      this.activeNode.position.set(this.startState.x + dx, this.startState.y + dy);
+      this.activeNode.position.set(
+        Math.round(this.startState.x + dx),
+        Math.round(this.startState.y + dy)
+      );
       // Preserve endpoint offsets relative to position
       this.activeNode.startX = this.startState.startX;
       this.activeNode.startY = this.startState.startY;
