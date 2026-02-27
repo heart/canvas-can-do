@@ -37,9 +37,12 @@ export type SceneDocument = {
 };
 
 export class HistoryManager {
+  private static readonly MAX_UNDO_STACK_SIZE = 200;
   private undoStack: SceneSnapshot[] = [];
   private redoStack: SceneSnapshot[] = [];
   private lastSnapshotKey = '';
+  private captureRequested = false;
+  private captureInFlight: Promise<void> | null = null;
 
   private objectLayer: Container;
 
@@ -48,12 +51,11 @@ export class HistoryManager {
   }
 
   async capture(): Promise<void> {
-    const snapshot = await this.serializeScene();
-    const key = JSON.stringify(snapshot);
-    if (key === this.lastSnapshotKey) return;
-    this.lastSnapshotKey = key;
-    this.undoStack.push(snapshot);
-    this.redoStack = [];
+    this.captureRequested = true;
+    if (!this.captureInFlight) {
+      this.captureInFlight = this.flushCaptureQueue();
+    }
+    await this.captureInFlight;
   }
 
   async undo(): Promise<void> {
@@ -61,7 +63,9 @@ export class HistoryManager {
     const current = this.undoStack.pop();
     if (current) this.redoStack.push(current);
     const prev = this.undoStack[this.undoStack.length - 1];
+    if (!prev) return;
     await this.restore(prev);
+    this.lastSnapshotKey = this.snapshotKey(prev);
   }
 
   async redo(): Promise<void> {
@@ -70,6 +74,7 @@ export class HistoryManager {
     if (!next) return;
     this.undoStack.push(next);
     await this.restore(next);
+    this.lastSnapshotKey = this.snapshotKey(next);
   }
 
   private async serializeScene(): Promise<SceneSnapshot> {
@@ -89,9 +94,9 @@ export class HistoryManager {
       throw new Error('Unsupported document version');
     }
     await this.restore({ nodes: doc.nodes });
-    const key = JSON.stringify(doc);
-    this.lastSnapshotKey = key;
-    this.undoStack = [{ nodes: doc.nodes }];
+    const snapshot = { nodes: doc.nodes };
+    this.lastSnapshotKey = this.snapshotKey(snapshot);
+    this.undoStack = [snapshot];
     this.redoStack = [];
   }
 
@@ -105,6 +110,31 @@ export class HistoryManager {
     this.lastSnapshotKey = '';
     this.undoStack = [];
     this.redoStack = [];
+    this.captureRequested = false;
+  }
+
+  private async flushCaptureQueue(): Promise<void> {
+    try {
+      while (this.captureRequested) {
+        this.captureRequested = false;
+        const snapshot = await this.serializeScene();
+        const key = this.snapshotKey(snapshot);
+        if (key === this.lastSnapshotKey) continue;
+
+        this.lastSnapshotKey = key;
+        this.undoStack.push(snapshot);
+        if (this.undoStack.length > HistoryManager.MAX_UNDO_STACK_SIZE) {
+          this.undoStack.splice(0, this.undoStack.length - HistoryManager.MAX_UNDO_STACK_SIZE);
+        }
+        this.redoStack = [];
+      }
+    } finally {
+      this.captureInFlight = null;
+    }
+  }
+
+  private snapshotKey(snapshot: SceneSnapshot): string {
+    return JSON.stringify(snapshot);
   }
 
   private serializeNode(node: BaseNode): SerializedNode {

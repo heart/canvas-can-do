@@ -1,9 +1,9 @@
-import { Container } from 'pixi.js';
+import { Container, Point } from 'pixi.js';
 import type { TextStyleFontWeight } from 'pixi.js';
 
 export type NodeType = 'rectangle' | 'circle' | 'text' | 'line' | 'ellipse' | 'star' | 'image' | 'group';
 
-export type PropertyType = 'string' | 'int' | 'float' | 'color' | 'boolean';
+export type PropertyType = 'string' | 'int' | 'float' | 'color' | 'boolean' | 'enum';
 export type PropertyGroup =
   | 'Meta'
   | 'Transform'
@@ -18,6 +18,7 @@ export interface NodePropertyDescriptor {
   key: string;
   type: PropertyType;
   value: string | number | boolean | null;
+  options?: Array<string | number>;
   group?: PropertyGroup;
   desc?: string;
   min?: number;
@@ -182,6 +183,10 @@ export class BaseNode extends Container {
   }
 
   getProps(): NodePropertyDescriptor[] {
+    const globalPosition = this.parent
+      ? this.parent.toGlobal(new Point(this.position.x, this.position.y))
+      : new Point(this.position.x, this.position.y);
+
     return [
       {
         name: 'Name',
@@ -211,7 +216,7 @@ export class BaseNode extends Container {
         name: 'X',
         key: 'x',
         type: 'int',
-        value: this.position.x,
+        value: Math.round(globalPosition.x),
         desc: 'X position',
         group: 'Transform',
       },
@@ -219,7 +224,7 @@ export class BaseNode extends Container {
         name: 'Y',
         key: 'y',
         type: 'int',
-        value: this.position.y,
+        value: Math.round(globalPosition.y),
         desc: 'Y position',
         group: 'Transform',
       },
@@ -284,10 +289,11 @@ export class BaseNode extends Container {
       {
         name: 'Stroke Width',
         key: 'strokeWidth',
-        type: 'float',
-        value: this.style.strokeWidth ?? 1,
+        type: 'int',
+        value: Math.max(0, Math.round(this.style.strokeWidth ?? 1)),
         desc: 'Stroke width',
         min: 0,
+        step: 1,
         group: 'Appearance',
       },
       {

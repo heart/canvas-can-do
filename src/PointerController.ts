@@ -29,6 +29,7 @@ export class PointerController {
   private selectionManager: SelectionManager;
   private hoverGraphics: Graphics;
   private hoveredNode: BaseNode | null = null;
+  private hoveredBounds: { x: number; y: number; width: number; height: number } | null = null;
   private clipboard: BaseNode[] = [];
   private onLayerChanged: () => void;
   private isPanning = false;
@@ -39,6 +40,10 @@ export class PointerController {
   private activeTextInput?: HTMLInputElement;
   private onHistoryCapture?: () => void | Promise<void>;
   private shortcutsEnabled = true;
+
+  private isPanModeActive(): boolean {
+    return this.isPanning || this.activeTool === 'pan';
+  }
 
   constructor(
     previewLayer: Container,
@@ -109,6 +114,10 @@ export class PointerController {
     this.shortcutsEnabled = enabled;
   }
 
+  setObjectSnapEnabled(enabled: boolean) {
+    this.selectionManager.setObjectSnapEnabled(enabled);
+  }
+
   getSelectionBounds() {
     if (this.selectionManager.getSelectedNodes().length === 0) return null;
     return this.selectionManager.getSelectionBounds();
@@ -139,7 +148,6 @@ export class PointerController {
       const removed = this.selectionManager.deleteSelected(this.objectLayer);
       if (removed.length) {
         e.preventDefault();
-        this.onLayerChanged();
         this.onHistoryCapture?.();
       }
     }
@@ -186,7 +194,6 @@ export class PointerController {
         if (!this.objectLayer.children.includes(group)) {
           this.objectLayer.addChild(group);
         }
-        this.onLayerChanged();
         this.onHistoryCapture?.();
       }
     }
@@ -202,7 +209,6 @@ export class PointerController {
         }
       });
       if (ungrouped.length) {
-        this.onLayerChanged();
         this.onHistoryCapture?.();
       }
     }
@@ -213,7 +219,6 @@ export class PointerController {
       const direction = e.key === 'ArrowUp' ? 1 : -1; // swap: Up moves forward, Down moves backward
       const moved = this.selectionManager.reorderSelected(this.objectLayer, direction);
       if (moved) {
-        this.onLayerChanged();
         this.onHistoryCapture?.();
       }
     }
@@ -230,7 +235,6 @@ export class PointerController {
       const dy = e.key === 'ArrowUp' ? -delta : e.key === 'ArrowDown' ? delta : 0;
       const moved = this.selectionManager.nudgeSelected(dx, dy);
       if (moved) {
-        this.onLayerChanged();
         this.onHistoryCapture?.();
       }
     }
@@ -273,12 +277,19 @@ export class PointerController {
     if (e.key === ' ') {
       this.isPanning = false;
       this.lastPan = undefined;
-      this.setCursor(null);
+      this.setCursor(this.activeTool === 'pan' ? 'grab' : null);
     }
   }
 
   setTool(tool: ToolName) {
     this.activeTool = tool;
+    this.lastPan = undefined;
+
+    if (tool === 'pan') {
+      this.setCursor('grab');
+    } else if (!this.isPanning) {
+      this.setCursor(null);
+    }
 
     // Clear selection when changing tools
     this.selectionManager.clear();
@@ -304,7 +315,7 @@ export class PointerController {
   }
 
   onPointerDown(e: PointerEvent) {
-    if (this.isPanning && this.world && this.app) {
+    if (this.isPanModeActive() && this.world && this.app) {
       this.lastPan = new Point(e.clientX, e.clientY);
       this.setCursor('grabbing');
       return;
@@ -326,9 +337,6 @@ export class PointerController {
       const hitObject = this.findHitObject(globalPoint);
 
       this.selectionManager.select((hitObject as BaseNode) || null);
-      if (hitObject) {
-        this.onLayerChanged();
-      }
 
       // Begin move transform when clicking on a selected object body
       if (hitObject && this.selectionManager.getSelectedNodes().length === 1) {
@@ -353,7 +361,7 @@ export class PointerController {
   }
 
   onPointerMove(e: PointerEvent) {
-    if (this.isPanning && this.world && this.app) {
+    if (this.isPanModeActive() && this.world && this.app) {
       if (this.lastPan) {
         const dx = e.clientX - this.lastPan.x;
         const dy = e.clientY - this.lastPan.y;
@@ -398,7 +406,7 @@ export class PointerController {
       this.onHistoryCapture?.();
     }
 
-    if (this.isPanning && !e.buttons) {
+    if (this.isPanModeActive() && !e.buttons) {
       if (this.world) {
         const nextX = Math.round(this.world.position.x);
         const nextY = Math.round(this.world.position.y);
@@ -415,7 +423,7 @@ export class PointerController {
         );
       }
       this.lastPan = undefined;
-      this.setCursor('grab');
+      this.setCursor(this.activeTool === 'pan' || this.isPanning ? 'grab' : null);
       return;
     }
 
@@ -532,7 +540,6 @@ export class PointerController {
         detail: { shape },
       });
       this.dispatchEvent(event);
-      this.onLayerChanged();
     }
   }
 
@@ -583,12 +590,33 @@ export class PointerController {
   }
 
   private updateHover(node: BaseNode | null, emitEvent: boolean) {
-    if (this.hoveredNode === node) return;
-    this.hoveredNode = node;
+    const nodeChanged = this.hoveredNode !== node;
+    let shouldRedraw = nodeChanged;
 
+    if (node && !nodeChanged) {
+      const nextBounds = node.getBounds();
+      const prevBounds = this.hoveredBounds;
+      shouldRedraw =
+        !prevBounds ||
+        prevBounds.x !== nextBounds.x ||
+        prevBounds.y !== nextBounds.y ||
+        prevBounds.width !== nextBounds.width ||
+        prevBounds.height !== nextBounds.height;
+    }
+
+    if (!shouldRedraw) return;
+
+    this.hoveredNode = node;
     this.hoverGraphics.clear();
     if (node) {
       const bounds = node.getBounds();
+      this.hoveredBounds = {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+      };
+
       const topLeft = this.world
         ? this.world.toLocal(new Point(bounds.x, bounds.y))
         : new Point(bounds.x, bounds.y);
@@ -599,9 +627,11 @@ export class PointerController {
       const h = bottomRight.y - topLeft.y;
       this.hoverGraphics.rect(topLeft.x, topLeft.y, w, h);
       this.hoverGraphics.stroke({ color: 0x0be666, alpha: 0.8, width: 1 });
+    } else {
+      this.hoveredBounds = null;
     }
 
-    if (emitEvent) {
+    if (emitEvent && nodeChanged) {
       this.dispatchEvent(
         new CustomEvent('hover:changed', {
           detail: { id: node?.id ?? null },
@@ -625,11 +655,12 @@ export class PointerController {
   }
 
   private findHitObject(globalPoint: Point): Container | undefined {
-    const children = [...(this.objectLayer?.children || [])].reverse();
+    const children = this.objectLayer?.children || [];
     const tolerance = 10;
 
-    return children.find((child) => {
-      if (child === this.objectLayer) return false;
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i];
+      if (child === this.objectLayer) continue;
       if ((child as any).type === 'line') {
         const line = child as any as LineNode;
         const startX = line.x + line.startX;
@@ -648,18 +679,25 @@ export class PointerController {
         const maxX = Math.max(startX, endX) + tolerance;
         const minY = Math.min(startY, endY) - tolerance;
         const maxY = Math.max(startY, endY) + tolerance;
-        return (
+        if (
           dist <= tolerance &&
           globalPoint.x >= minX &&
           globalPoint.x <= maxX &&
           globalPoint.y >= minY &&
           globalPoint.y <= maxY
-        );
+        ) {
+          return child;
+        }
+        continue;
       }
 
       const bounds = child.getBounds();
-      return bounds.containsPoint(globalPoint.x, globalPoint.y);
-    });
+      if (bounds.containsPoint(globalPoint.x, globalPoint.y)) {
+        return child;
+      }
+    }
+
+    return undefined;
   }
 
   private beginTextEdit(node: TextNode) {
@@ -709,7 +747,6 @@ export class PointerController {
       if (canceled) return;
       node.setText(input.value);
       this.selectionManager.select(node);
-      this.onLayerChanged();
       this.onHistoryCapture?.();
       cleanup();
     };

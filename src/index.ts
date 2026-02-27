@@ -6,9 +6,16 @@ import { LayerHierarchy } from './core/layers/LayerHierarchy';
 import { BaseNode } from './core/nodes/BaseNode';
 import type { InspectableNode } from './core/nodes';
 import { ImageNode } from './core/nodes/ImageNode';
+import { TextNode } from './core/nodes/TextNode';
 import { HistoryManager } from './core/history/HistoryManager';
 import type { SceneDocument } from './core/history/HistoryManager';
 import { RulerOverlay } from './core/ui/RulerOverlay';
+import {
+  DEFAULT_FONT_FAMILY,
+  normalizeFontFamily,
+  normalizeFontStyle,
+  normalizeFontWeight,
+} from './core/fonts/fontOptions';
 
 export const version = '0.0.0';
 
@@ -25,6 +32,13 @@ export type ToolName =
 export interface NodePropUpdate {
   id: string;
   props: Record<string, string | number | boolean | null>;
+}
+
+export interface AddedNodeResult {
+  id: string;
+  type: InspectableNode['type'];
+  inspectable: InspectableNode;
+  update: NodePropUpdate;
 }
 
 export const TOOL_CURSOR: Record<ToolName, string | null> = {
@@ -53,6 +67,65 @@ export class CCDApp extends EventTarget {
   history?: HistoryManager;
   private ruler?: RulerOverlay;
   private shortcutsEnabled = true;
+  private objectSnapEnabled = true;
+  private isInitialized = false;
+
+  private readonly syncStageHitArea = () => {
+    this.app.stage.hitArea = this.app.screen;
+  };
+  private readonly updateRuler = () => {
+    this.ruler?.update();
+  };
+  private readonly onZoomKeyDown = (e: KeyboardEvent) => this.handleZoomKeys(e);
+  private readonly onUndoRedoKeyDown = (e: KeyboardEvent) => this.handleUndoRedoKeys(e);
+  private readonly onToolKeyDown = (e: KeyboardEvent) => this.handleToolKeys(e);
+  private readonly onCanvasWheel = (e: WheelEvent) => this.handleWheel(e);
+  private readonly onHostDragOver = (e: DragEvent) => {
+    e.preventDefault();
+  };
+  private readonly onHostDrop = (e: DragEvent) => {
+    this.handleDrop(e);
+  };
+  private readonly onHostPaste = (e: ClipboardEvent) => {
+    this.handlePaste(e);
+  };
+  private readonly onWindowPaste = (e: ClipboardEvent) => {
+    this.handlePaste(e);
+  };
+  private readonly onPointerControllerShapeCreated = ((e: ShapeCreatedEvent) => {
+    const shape = e.detail.shape;
+    this.objectLayer.addChild(shape);
+    this.dispatchLayerHierarchyChanged();
+    this.useTool('select');
+    this.history?.capture();
+  }) as EventListener;
+  private readonly onPointerControllerViewportChanged = ((e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    const evt = new CustomEvent('viewport:changed', { detail });
+    this.dispatchOnHost(evt);
+  }) as EventListener;
+  private readonly onPointerControllerHoverChanged = ((e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    const evt = new CustomEvent('hover:changed', { detail });
+    this.dispatchOnHost(evt);
+  }) as EventListener;
+  private readonly onHostPointerDown = (e: PointerEvent) => {
+    this.pointerController?.onPointerDown(e);
+  };
+  private readonly onHostPointerMove = (e: PointerEvent) => {
+    this.pointerController?.onPointerMove(e);
+  };
+  private readonly onHostPointerUp = (e: PointerEvent) => {
+    this.pointerController?.onPointerUp(e);
+  };
+  private readonly onHostDoubleClick = (e: MouseEvent) => {
+    this.pointerController?.onDoubleClick(e);
+  };
+  private readonly onHostPointerCancel = (_: PointerEvent) => {
+    this.pointerController?.cancel();
+  };
+  private pointerControllerKeyDownHandler?: (e: KeyboardEvent) => void;
+  private pointerControllerKeyUpHandler?: (e: KeyboardEvent) => void;
 
   activeTool: ToolName = 'select';
 
@@ -61,6 +134,8 @@ export class CCDApp extends EventTarget {
   }
 
   async init(host: HTMLElement) {
+    if (this.isInitialized) return;
+
     await this.app.init({
       background: '#F2F2F2',
       resizeTo: host, // ให้ Pixi จัดการ resize เอง
@@ -90,9 +165,7 @@ export class CCDApp extends EventTarget {
     this.uiLayer.eventMode = 'passive';
 
     // ถ้าต้อง sync hitArea ให้ชัวร์
-    this.app.ticker.add(() => {
-      this.app.stage.hitArea = this.app.screen;
-    });
+    this.app.ticker.add(this.syncStageHitArea);
 
     this.initPointerController();
     this.history = new HistoryManager(this.objectLayer);
@@ -104,31 +177,36 @@ export class CCDApp extends EventTarget {
       x: this.world.position.x,
       y: this.world.position.y,
     }));
-    this.app.ticker.add(() => this.ruler?.update());
+    this.app.ticker.add(this.updateRuler);
 
     // zoom hotkeys
-    window.addEventListener('keydown', this.handleZoomKeys.bind(this));
-    window.addEventListener('keydown', this.handleUndoRedoKeys.bind(this));
-    window.addEventListener('keydown', this.handleToolKeys.bind(this));
+    window.addEventListener('keydown', this.onZoomKeyDown);
+    window.addEventListener('keydown', this.onUndoRedoKeyDown);
+    window.addEventListener('keydown', this.onToolKeyDown);
 
     // wheel: pan and pinch/ctrl zoom
-    this.app.canvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+    this.app.canvas.addEventListener('wheel', this.onCanvasWheel, { passive: false });
 
     // drag & drop / paste images
-    this.host?.addEventListener('dragover', (e) => {
-      e.preventDefault();
-    });
-    this.host?.addEventListener('drop', (e) => {
-      this.handleDrop(e);
-    });
-    this.host?.addEventListener('paste', (e) => {
-      this.handlePaste(e);
-    });
+    this.host?.addEventListener('dragover', this.onHostDragOver);
+    this.host?.addEventListener('drop', this.onHostDrop);
+    this.host?.addEventListener('paste', this.onHostPaste);
+    window.addEventListener('paste', this.onWindowPaste);
+    this.isInitialized = true;
   }
 
   public setShortcutsEnabled(enabled: boolean) {
     this.shortcutsEnabled = enabled;
     this.pointerController?.setShortcutsEnabled(enabled);
+  }
+
+  public setObjectSnapEnabled(enabled: boolean) {
+    this.objectSnapEnabled = enabled;
+    this.pointerController?.setObjectSnapEnabled(enabled);
+  }
+
+  public isObjectSnapEnabled(): boolean {
+    return this.objectSnapEnabled;
   }
 
   initPointerController() {
@@ -144,56 +222,26 @@ export class CCDApp extends EventTarget {
       },
       this
     );
+    this.pointerController.setObjectSnapEnabled(this.objectSnapEnabled);
 
     // Listen for shape creation events from pointer controller
-    this.pointerController.addEventListener('shape:created', ((e: ShapeCreatedEvent) => {
-      const shape = e.detail.shape;
-      this.objectLayer.addChild(shape);
-      this.dispatchLayerHierarchyChanged();
-      this.useTool('select');
-      this.history?.capture();
-    }) as EventListener);
-    this.pointerController.addEventListener('viewport:changed', ((e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      const evt = new CustomEvent('viewport:changed', { detail });
-      this.dispatchOnHost(evt);
-    }) as EventListener);
-    this.pointerController.addEventListener('hover:changed', ((e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      const evt = new CustomEvent('hover:changed', { detail });
-      this.dispatchOnHost(evt);
-    }) as EventListener);
-
-    this.host?.addEventListener('pointerdown', (e) => {
-      //this.host.setPointerCapture(e.pointerId);
-      this.pointerController?.onPointerDown(e);
-    });
-
-    this.host?.addEventListener('pointermove', (e) => {
-      this.pointerController?.onPointerMove(e);
-    });
-
-    this.host?.addEventListener('pointerup', (e) => {
-      //host.releasePointerCapture(e.pointerId);
-      this.pointerController?.onPointerUp(e);
-    });
-
-    this.host?.addEventListener('dblclick', (e) => {
-      this.pointerController?.onDoubleClick(e);
-    });
-
-    this.host?.addEventListener('pointercancel', (_) => {
-      this.pointerController?.cancel();
-    });
-
-    window.addEventListener(
-      'keydown',
-      this.pointerController.handleKeyDown.bind(this.pointerController)
+    this.pointerController.addEventListener('shape:created', this.onPointerControllerShapeCreated);
+    this.pointerController.addEventListener(
+      'viewport:changed',
+      this.onPointerControllerViewportChanged
     );
-    window.addEventListener(
-      'keyup',
-      this.pointerController.handleKeyUp.bind(this.pointerController)
-    );
+    this.pointerController.addEventListener('hover:changed', this.onPointerControllerHoverChanged);
+
+    this.host?.addEventListener('pointerdown', this.onHostPointerDown);
+    this.host?.addEventListener('pointermove', this.onHostPointerMove);
+    this.host?.addEventListener('pointerup', this.onHostPointerUp);
+    this.host?.addEventListener('dblclick', this.onHostDoubleClick);
+    this.host?.addEventListener('pointercancel', this.onHostPointerCancel);
+
+    this.pointerControllerKeyDownHandler = this.pointerController.handleKeyDown.bind(this.pointerController);
+    this.pointerControllerKeyUpHandler = this.pointerController.handleKeyUp.bind(this.pointerController);
+    window.addEventListener('keydown', this.pointerControllerKeyDownHandler);
+    window.addEventListener('keyup', this.pointerControllerKeyUpHandler);
   }
 
   private handleZoomKeys(e: KeyboardEvent) {
@@ -416,9 +464,31 @@ export class CCDApp extends EventTarget {
   }
 
   private async handlePaste(e: ClipboardEvent) {
-    const items = Array.from(e.clipboardData?.items ?? []);
+    if (e.defaultPrevented) return;
+    if (this.isEditingText()) return;
+
+    const clipboard = e.clipboardData;
+    const items = Array.from(clipboard?.items ?? []);
     const imageItems = items.filter((item) => item.type.startsWith('image/'));
-    if (!imageItems.length) return;
+    if (imageItems.length) {
+      e.preventDefault();
+      const point = this.getWorldPointFromClient(
+        this.app.screen.width / 2,
+        this.app.screen.height / 2,
+        true
+      );
+
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (file) {
+          await this.addImageFromSource(await this.toDataUrl(file), point);
+        }
+      }
+      return;
+    }
+
+    const text = clipboard?.getData('text/plain') ?? '';
+    if (!text.trim()) return;
 
     e.preventDefault();
     const point = this.getWorldPointFromClient(
@@ -426,28 +496,104 @@ export class CCDApp extends EventTarget {
       this.app.screen.height / 2,
       true
     );
-
-    for (const item of imageItems) {
-      const file = item.getAsFile();
-      if (file) {
-        await this.addImageFromSource(await this.toDataUrl(file), point);
-      }
-    }
+    await this.addTextAt(text, point);
   }
 
-  private async addImageFromSource(source: string | File | Blob, point: Point) {
+  private async addTextAt(text: string, point: Point): Promise<AddedNodeResult> {
+    const node = new TextNode({
+      text,
+      x: point.x,
+      y: point.y,
+      style: {
+        fill: '#333333',
+      },
+    });
+    return this.commitAddedNode(node);
+  }
+
+  /**
+   * Public API for adding plain text as a text node.
+   * Default placement is the center of current viewport.
+   */
+  public async addText(
+    text: string,
+    options?: { x: number; y: number; space?: 'world' | 'screen' }
+  ): Promise<AddedNodeResult | null> {
+    const content = text ?? '';
+    if (!content.trim()) return null;
+
+    let point: Point;
+    if (options) {
+      point =
+        options.space === 'world'
+          ? new Point(options.x, options.y)
+          : this.getWorldPointFromClient(options.x, options.y, true);
+    } else {
+      point = this.getWorldPointFromClient(
+        this.app.screen.width / 2,
+        this.app.screen.height / 2,
+        true
+      );
+    }
+    return this.addTextAt(content, point);
+  }
+
+  /**
+   * Public API for adding an image from URL/data URL/File/Blob.
+   * Default placement is the center of current viewport.
+   */
+  public async addImage(
+    source: string | File | Blob,
+    options?: { x: number; y: number; space?: 'world' | 'screen' }
+  ): Promise<AddedNodeResult | null> {
+    let point: Point;
+    if (options) {
+      point =
+        options.space === 'world'
+          ? new Point(options.x, options.y)
+          : this.getWorldPointFromClient(options.x, options.y, true);
+    } else {
+      point = this.getWorldPointFromClient(
+        this.app.screen.width / 2,
+        this.app.screen.height / 2,
+        true
+      );
+    }
+    return this.addImageFromSource(source, point);
+  }
+
+  private async addImageFromSource(
+    source: string | File | Blob,
+    point: Point
+  ): Promise<AddedNodeResult | null> {
     try {
       const node = await ImageNode.fromSource({
         source,
         x: point.x,
         y: point.y,
       });
-      this.objectLayer.addChild(node);
-      this.dispatchLayerHierarchyChanged();
-      await this.history?.capture();
+      return this.commitAddedNode(node);
     } catch (err) {
       console.error('Failed to add image', err);
+      return null;
     }
+  }
+
+  private async commitAddedNode(node: BaseNode): Promise<AddedNodeResult> {
+    this.objectLayer.addChild(node);
+    this.dispatchLayerHierarchyChanged();
+    await this.history?.capture();
+
+    const inspectable = node.getInspectable();
+    return {
+      id: node.id,
+      type: node.type,
+      inspectable,
+      update: {
+        id: node.id,
+        props: Object.fromEntries(inspectable.props.map((prop) => [prop.key, prop.value])),
+      },
+    };
   }
 
   private getWorldPointFromClient(clientX: number, clientY: number, isScreenCoords = false): Point {
@@ -715,7 +861,7 @@ export class CCDApp extends EventTarget {
       case 'text': {
         const n = node as any;
         const fontSize = n.style.fontSize ?? 20;
-        const fontFamily = n.style.fontFamily ?? 'Arial';
+        const fontFamily = n.style.fontFamily ?? DEFAULT_FONT_FAMILY;
         const fontWeight = n.style.fontWeight ?? 'normal';
         const fontStyle = n.style.fontStyle ?? 'normal';
         const fill = n.style.fill ?? '#000000';
@@ -922,7 +1068,7 @@ export class CCDApp extends EventTarget {
   dispatchLayerHierarchyChanged() {
     const hierarchy = LayerHierarchy.getHierarchy(this.objectLayer);
     const event = new CustomEvent('layer:changed', {
-      detail: { hierarchy, selectedIds: [] },
+      detail: { hierarchy },
     });
     this.dispatchOnHost(event);
   }
@@ -1001,10 +1147,10 @@ export class CCDApp extends EventTarget {
             node.name = value as string;
             break;
           case 'x':
-            node.position.x = Number(value);
+            this.setNodeGlobalPosition(node, Number(value), undefined);
             break;
           case 'y':
-            node.position.y = Number(value);
+            this.setNodeGlobalPosition(node, undefined, Number(value));
             break;
           case 'width':
             node.width = Number(value);
@@ -1065,11 +1211,28 @@ export class CCDApp extends EventTarget {
           case 'endX':
           case 'endY':
             if (node.type === 'line') {
-              // values are absolute; store relative to node position
-              if (key === 'startX') (node as any).startX = Number(value) - node.position.x;
-              if (key === 'startY') (node as any).startY = Number(value) - node.position.y;
-              if (key === 'endX') (node as any).endX = Number(value) - node.position.x;
-              if (key === 'endY') (node as any).endY = Number(value) - node.position.y;
+              const currentStart = this.getLinePointGlobal(node as any, 'start');
+              const currentEnd = this.getLinePointGlobal(node as any, 'end');
+              const targetStart = { ...currentStart };
+              const targetEnd = { ...currentEnd };
+              if (key === 'startX') targetStart.x = Number(value);
+              if (key === 'startY') targetStart.y = Number(value);
+              if (key === 'endX') targetEnd.x = Number(value);
+              if (key === 'endY') targetEnd.y = Number(value);
+
+              const parent = (node as any).parent as Container | null;
+              const startLocal = parent
+                ? parent.toLocal(new Point(targetStart.x, targetStart.y))
+                : new Point(targetStart.x, targetStart.y);
+              const endLocal = parent
+                ? parent.toLocal(new Point(targetEnd.x, targetEnd.y))
+                : new Point(targetEnd.x, targetEnd.y);
+
+              (node as any).position.set(startLocal.x, startLocal.y);
+              (node as any).startX = 0;
+              (node as any).startY = 0;
+              (node as any).endX = endLocal.x - startLocal.x;
+              (node as any).endY = endLocal.y - startLocal.y;
               (node as any).refresh?.();
               (node as any).redraw?.();
             }
@@ -1096,13 +1259,49 @@ export class CCDApp extends EventTarget {
   }
 
   private applyStyle(node: BaseNode, key: string, value: any) {
-    const styleUpdate: any = { [key]: value };
+    const normalizedValue =
+      key === 'strokeWidth'
+        ? Math.max(0, Math.round(Number.isFinite(Number(value)) ? Number(value) : 0))
+        : key === 'fontFamily'
+          ? normalizeFontFamily(value)
+        : key === 'fontStyle'
+          ? normalizeFontStyle(value)
+          : key === 'fontWeight'
+            ? normalizeFontWeight(value)
+        : value;
+    const styleUpdate: any = { [key]: normalizedValue };
     if ('setStyle' in node && typeof (node as any).setStyle === 'function') {
       (node as any).setStyle(styleUpdate);
     } else {
       node.style = { ...node.style, ...styleUpdate };
       (node as any).redraw?.();
     }
+  }
+
+  private setNodeGlobalPosition(node: BaseNode, x?: number, y?: number) {
+    const currentGlobal = this.getNodeGlobalPosition(node);
+    const targetX = x ?? currentGlobal.x;
+    const targetY = y ?? currentGlobal.y;
+    const local = node.parent
+      ? node.parent.toLocal(new Point(targetX, targetY))
+      : new Point(targetX, targetY);
+    node.position.set(local.x, local.y);
+  }
+
+  private getNodeGlobalPosition(node: BaseNode): Point {
+    if (!node.parent) return new Point(node.position.x, node.position.y);
+    return node.parent.toGlobal(new Point(node.position.x, node.position.y));
+  }
+
+  private getLinePointGlobal(
+    node: { parent?: Container; position: Point; startX: number; startY: number; endX: number; endY: number },
+    which: 'start' | 'end'
+  ): Point {
+    const local = new Point(
+      node.position.x + (which === 'start' ? node.startX : node.endX),
+      node.position.y + (which === 'start' ? node.startY : node.endY)
+    );
+    return node.parent ? node.parent.toGlobal(local) : local;
   }
 
   private findNodeById(container: Container, id: string): BaseNode | null {
@@ -1121,6 +1320,52 @@ export class CCDApp extends EventTarget {
   }
 
   destroy() {
+    this.app.ticker.remove(this.syncStageHitArea);
+    this.app.ticker.remove(this.updateRuler);
+
+    window.removeEventListener('keydown', this.onZoomKeyDown);
+    window.removeEventListener('keydown', this.onUndoRedoKeyDown);
+    window.removeEventListener('keydown', this.onToolKeyDown);
+    if (this.pointerControllerKeyDownHandler) {
+      window.removeEventListener('keydown', this.pointerControllerKeyDownHandler);
+    }
+    if (this.pointerControllerKeyUpHandler) {
+      window.removeEventListener('keyup', this.pointerControllerKeyUpHandler);
+    }
+
+    this.app.canvas.removeEventListener('wheel', this.onCanvasWheel);
+    this.host?.removeEventListener('dragover', this.onHostDragOver);
+    this.host?.removeEventListener('drop', this.onHostDrop);
+    this.host?.removeEventListener('paste', this.onHostPaste);
+    window.removeEventListener('paste', this.onWindowPaste);
+    this.host?.removeEventListener('pointerdown', this.onHostPointerDown);
+    this.host?.removeEventListener('pointermove', this.onHostPointerMove);
+    this.host?.removeEventListener('pointerup', this.onHostPointerUp);
+    this.host?.removeEventListener('dblclick', this.onHostDoubleClick);
+    this.host?.removeEventListener('pointercancel', this.onHostPointerCancel);
+
+    if (this.pointerController) {
+      this.pointerController.removeEventListener(
+        'shape:created',
+        this.onPointerControllerShapeCreated
+      );
+      this.pointerController.removeEventListener(
+        'viewport:changed',
+        this.onPointerControllerViewportChanged
+      );
+      this.pointerController.removeEventListener(
+        'hover:changed',
+        this.onPointerControllerHoverChanged
+      );
+    }
+
+    this.pointerControllerKeyDownHandler = undefined;
+    this.pointerControllerKeyUpHandler = undefined;
+    this.pointerController = undefined;
+    this.ruler = undefined;
+    this.history = undefined;
+    this.host = undefined;
+    this.isInitialized = false;
     this.app.destroy(true);
   }
 

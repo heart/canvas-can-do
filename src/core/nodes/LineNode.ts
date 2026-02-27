@@ -1,4 +1,4 @@
-import { Graphics } from 'pixi.js';
+import { Graphics, Point } from 'pixi.js';
 import { BaseNode } from './BaseNode';
 import type { Style, NodePropertyDescriptor } from './BaseNode';
 
@@ -93,17 +93,23 @@ export class LineNode extends BaseNode {
   }
 
   getProps(): NodePropertyDescriptor[] {
-    const startX = this.position.x + this.startX;
-    const startY = this.position.y + this.startY;
-    const endX = this.position.x + this.endX;
-    const endY = this.position.y + this.endY;
+    const startLocalX = this.position.x + this.startX;
+    const startLocalY = this.position.y + this.startY;
+    const endLocalX = this.position.x + this.endX;
+    const endLocalY = this.position.y + this.endY;
+    const start = this.parent
+      ? this.parent.toGlobal(new Point(startLocalX, startLocalY))
+      : new Point(startLocalX, startLocalY);
+    const end = this.parent
+      ? this.parent.toGlobal(new Point(endLocalX, endLocalY))
+      : new Point(endLocalX, endLocalY);
     return [
       ...super.getProps(),
       {
         name: 'Start X',
         key: 'startX',
         type: 'float',
-        value: startX,
+        value: start.x,
         desc: 'Start X position',
         group: 'Line',
       },
@@ -111,7 +117,7 @@ export class LineNode extends BaseNode {
         name: 'Start Y',
         key: 'startY',
         type: 'float',
-        value: startY,
+        value: start.y,
         desc: 'Start Y position',
         group: 'Line',
       },
@@ -119,7 +125,7 @@ export class LineNode extends BaseNode {
         name: 'End X',
         key: 'endX',
         type: 'float',
-        value: endX,
+        value: end.x,
         desc: 'End X position',
         group: 'Line',
       },
@@ -127,7 +133,7 @@ export class LineNode extends BaseNode {
         name: 'End Y',
         key: 'endY',
         type: 'float',
-        value: endY,
+        value: end.y,
         desc: 'End Y position',
         group: 'Line',
       },

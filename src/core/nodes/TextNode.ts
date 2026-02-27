@@ -2,6 +2,12 @@ import { Text } from 'pixi.js';
 import type { TextStyleFontWeight } from 'pixi.js';
 import { BaseNode } from './BaseNode';
 import type { Style, NodePropertyDescriptor } from './BaseNode';
+import {
+  DEFAULT_FONT_FAMILY,
+  FONT_FAMILY_OPTIONS,
+  FONT_STYLE_OPTIONS,
+  FONT_WEIGHT_OPTIONS,
+} from '../fonts/fontOptions';
 
 export class TextNode extends BaseNode {
   readonly type = 'text' as const;
@@ -32,10 +38,10 @@ export class TextNode extends BaseNode {
     });
 
     this.text = options.text;
-    
+
     // Setup text sprite
     const fontSize = this.style.fontSize ?? 20;
-    const fontFamily = this.style.fontFamily ?? 'Arial';
+    const fontFamily = this.style.fontFamily ?? DEFAULT_FONT_FAMILY;
     const fontWeight = (this.style.fontWeight ?? 'normal') as TextStyleFontWeight;
     const fontStyle = this.style.fontStyle ?? 'normal';
     this.textSprite = new Text({
@@ -46,12 +52,12 @@ export class TextNode extends BaseNode {
         fontFamily,
         fontWeight,
         fontStyle,
-      }
+      },
     });
     this.textSprite.resolution = Math.max(1, window.devicePixelRatio || 1);
     this.textSprite.roundPixels = true;
     this.addChild(this.textSprite);
-    
+
     // Set initial dimensions
     this._width = this.textSprite.width;
     this._height = this.textSprite.height;
@@ -68,8 +74,9 @@ export class TextNode extends BaseNode {
   setStyle(style: Partial<Style>): this {
     this.style = { ...this.style, ...style };
     if (style.fill) {
-      const fillColor = typeof style.fill === 'string' 
-        ? parseInt(style.fill.replace('#', ''), 16) 
+      const fillColor =
+        typeof style.fill === 'string'
+          ? parseInt(style.fill.replace('#', ''), 16)
         : style.fill;
       this.textSprite.style.fill = fillColor;
     }
@@ -103,25 +110,28 @@ export class TextNode extends BaseNode {
       {
         name: 'Font Family',
         key: 'fontFamily',
-        type: 'string',
-        value: this.style.fontFamily ?? 'Arial',
+        type: 'enum',
+        value: this.style.fontFamily ?? DEFAULT_FONT_FAMILY,
+        options: [...FONT_FAMILY_OPTIONS],
         desc: 'Font family',
         group: 'Text',
       },
       {
         name: 'Font Weight',
         key: 'fontWeight',
-        type: 'string',
+        type: 'enum',
         value: (this.style.fontWeight ?? 'normal') as string,
-        desc: 'Font weight (e.g. 300, 400, 600, bold, normal)',
+        options: [...FONT_WEIGHT_OPTIONS],
+        desc: 'Font weight',
         group: 'Text',
       },
       {
         name: 'Font Style',
         key: 'fontStyle',
-        type: 'string',
+        type: 'enum',
         value: this.style.fontStyle ?? 'normal',
-        desc: 'Font style (normal, italic, oblique)',
+        options: [...FONT_STYLE_OPTIONS],
+        desc: 'Font style',
         group: 'Text',
       },
       {
