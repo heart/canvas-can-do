@@ -51,15 +51,26 @@ const svg = await app.exportSVG({
 const doc = await app.exportJSON();
 if (doc) await app.importJSON(doc);
 
-// Per-node export presets (persisted in exportJSON/importJSON)
-await app.setNodeExportSettings(frame.id, {
-  presets: [
-    { id: 'png-1x', format: 'png', scale: 1, suffix: '' },
-    { id: 'png-2x', format: 'png', scale: 2, suffix: '@2x' },
-    { id: 'svg', format: 'svg', scale: 1, suffix: '' },
-  ],
+// Frames
+const frame = await app.addFrame({
+  name: 'Frame 1',
+  width: 1280,
+  height: 720,
+  backgroundColor: '#ffffff',
+  borderColor: '#A0A0A0',
+  borderWidth: 1,
+  clipContent: true,
 });
-const asset = await app.exportNodeByPreset(frame.id, { presetId: 'png-2x' });
+const frames = app.getFrames();
+const framePng = await app.exportRaster({ type: 'png', scope: 'frame', frameId: frame?.id });
+
+// Per-node export presets (persisted in exportJSON/importJSON)
+const preset = await app.addExportSetting(frame!.id, {
+  format: 'png',
+  scale: 2,
+  suffix: '@2x',
+});
+const asset = preset ? await app.exportNodeByPreset(frame!.id, preset.id) : null;
 if (asset?.contentType === 'dataUrl') {
   // asset.content => data URL
 }
@@ -73,19 +84,6 @@ const canMove = app.canMoveLayers(['node-a'], 'node-b', 'before');
 if (canMove.ok) {
   await app.moveLayers(['node-a'], 'node-b', 'before');
 }
-
-// Frames
-const frame = await app.addFrame({
-  name: 'Frame 1',
-  width: 1280,
-  height: 720,
-  backgroundColor: '#ffffff',
-  borderColor: '#A0A0A0',
-  borderWidth: 1,
-  clipContent: true,
-});
-const frames = app.getFrames();
-const framePng = await app.exportRaster({ type: 'png', scope: 'frame', frameId: frame?.id });
 ```
 
 ## Layer Reordering API
@@ -328,45 +326,46 @@ type NodeExportPreset = {
 ### Preset APIs
 
 ```ts
-// read
-const settings = app.getNodeExportSettings(nodeId);
-
-// replace full settings
-await app.setNodeExportSettings(nodeId, {
-  presets: [
-    { id: 'png-1x', format: 'png', scale: 1, suffix: '' },
-    { id: 'png-2x', format: 'png', scale: 2, suffix: '@2x' },
-    { id: 'svg', format: 'svg', scale: 1, suffix: '' },
-  ],
-});
-
-// insert/update one preset by id
-await app.upsertNodeExportPreset(nodeId, {
-  id: 'png-3x',
+// add preset and link to node
+const added = await app.addExportSetting(nodeId, {
   format: 'png',
-  scale: 3,
-  suffix: '@3x',
+  scale: 1,
+  suffix: '',
 });
 
-// edit a preset entity directly (affects all linked nodes using this preset id)
-await app.updateExportPreset(`${nodeId}:png-2x`, {
+// get preset entity by id
+const preset = app.getExportSettingById(added!.id);
+
+// edit preset entity
+await app.editExportSetting(added!.id, {
   scale: 2,
   suffix: '@2x',
 });
 
+// delete preset entity (and unlink from all nodes)
+await app.deleteExportSetting(added!.id);
+
+// list preset ids linked to a node
+const presetIds = app.getExportSettingIds(nodeId);
+
+// list all presets in document (without scanning nodes manually)
+const allPresets = app.getAllExportSettings();
+
 // inspect linked nodes before editing shared presets
-const usedBy = app.getExportPresetUsage(`${nodeId}:png-2x`);
+const usedBy = app.getExportPresetUsage(preset!.id);
 
 // export one node using its preset
-const asset = await app.exportNodeByPreset(nodeId, { presetId: 'png-2x' });
+const asset = await app.exportNodeByPreset(nodeId, preset!.id);
 if (asset) {
   // asset.filename, asset.mimeType, asset.contentType, asset.content
 }
 
 // export many nodes in one call
+const frameAPreset = await app.addExportSetting(frameA, { format: 'png', scale: 1, suffix: '' });
+const frameBPreset = await app.addExportSetting(frameB, { format: 'svg', scale: 1, suffix: '' });
 const assets = await app.exportNodesByPreset([
-  { nodeId: frameA, presetId: 'png-1x' },
-  { nodeId: frameB, presetId: 'svg' },
+  { nodeId: frameA, presetId: frameAPreset!.id },
+  { nodeId: frameB, presetId: frameBPreset!.id },
 ]);
 ```
 
@@ -416,7 +415,6 @@ This section defines the document model expectations after adding frames and exp
 - Preserve exact hierarchy (parent/child + order).
 - Preserve per-node transform and visibility/locking.
 - Preserve frame-specific properties and behavior.
-- Keep backward compatibility with older documents where possible.
 - Enforce frame root-only invariant on import/restore.
 
 ### Required Frame Fields (logical model)
@@ -456,7 +454,6 @@ Import normalization defaults for frame fields:
 
 Use `exportJSON()` as the payload to your backend.  
 This payload now includes `exportStore` (preset registry + node links), so loading back with `importJSON()` restores export presets too.
-Legacy documents that previously stored `node.exportSettings` are still accepted and migrated at import time.
 
 ```ts
 // save
@@ -508,16 +505,17 @@ Suggested UX in the right sidebar when 1 node is selected:
 
 Suggested UI behavior:
 
-- Auto-save preset edits immediately via `setNodeExportSettings` / `upsertNodeExportPreset`
+- Auto-save preset edits immediately via `addExportSetting` / `editExportSetting` / `deleteExportSetting`
 - Keep preset `id` stable; use `id` for persistence and updates (shared ids = shared edits)
+- Export requires explicit `presetId` linked to that node (no implicit fallback preset)
 - Show final filename preview from `name + suffix + extension`
 - When exporting multiple selected nodes, call `exportNodesByPreset`
 
 ## Implementation Guide
 
-1. Add an `ExportPanel` in your inspector that reads `getNodeExportSettings(nodeId)`.
-2. Bind form fields to preset objects and debounce writes to `setNodeExportSettings`.
-3. On export click, call `exportNodeByPreset(nodeId, { presetId })`.
+1. Add an `ExportPanel` in your inspector that reads `getAllExportSettings()` for document-level preset list, and `getExportSettingIds(nodeId)` for per-node links.
+2. Bind form fields to preset objects and debounce writes to `editExportSetting`.
+3. On export click, call `exportNodeByPreset(nodeId, presetId)`.
 4. If `asset.contentType === 'dataUrl'`, download with anchor `href = dataUrl`.
 5. If `asset.contentType === 'text'` (SVG), create `Blob([asset.content], { type: asset.mimeType })`.
 6. For batch export, call `exportNodesByPreset` then zip/download in your app shell.

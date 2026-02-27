@@ -16,11 +16,9 @@ import {
   DEFAULT_EXPORT_PRESET_STORE,
   normalizeExportPresetStore,
   normalizeNodeExportPreset,
-  normalizeNodeExportSettings,
   sanitizeExportFileBaseName,
   type ExportPresetStore,
   type NodeExportPreset,
-  type NodeExportSettings,
 } from './core/export/exportSettings';
 import {
   DEFAULT_FONT_FAMILY,
@@ -30,7 +28,7 @@ import {
 } from './core/fonts/fontOptions';
 
 export const version = '0.0.0';
-export type { NodeExportPreset, NodeExportSettings } from './core/export/exportSettings';
+export type { NodeExportPreset } from './core/export/exportSettings';
 
 export type ToolName =
   | 'select'
@@ -65,8 +63,6 @@ export interface AddFrameOptions {
   backgroundColor?: string | null;
   borderColor?: string;
   borderWidth?: number;
-  // legacy alias
-  background?: string | null;
   clipContent?: boolean;
 }
 
@@ -106,9 +102,14 @@ export interface NodeExportAsset {
   contentType: 'dataUrl' | 'text';
 }
 
-export interface ExportNodePresetOptions {
-  presetId?: string;
-  fallbackToFirstPreset?: boolean;
+export interface ExportSettingRecord {
+  id: string;
+  preset: NodeExportPreset;
+  linkedNodeIds: string[];
+}
+
+export interface ExportPresetEditOptions {
+  recordHistory?: boolean;
 }
 
 export const TOOL_CURSOR: Record<ToolName, string | null> = {
@@ -703,12 +704,7 @@ export class CCDApp extends EventTarget {
       height,
       x: Math.round(point.x),
       y: Math.round(point.y),
-      backgroundColor:
-        options.backgroundColor !== undefined
-          ? options.backgroundColor
-          : options.background === undefined
-            ? '#ffffff'
-            : options.background,
+      backgroundColor: options.backgroundColor ?? '#ffffff',
       borderColor: options.borderColor ?? '#A0A0A0',
       borderWidth: options.borderWidth ?? 1,
       clipContent: options.clipContent ?? true,
@@ -738,7 +734,6 @@ export class CCDApp extends EventTarget {
 
   private async commitAddedNode(node: BaseNode): Promise<AddedNodeResult> {
     this.objectLayer.addChild(node);
-    this.ensureNodeHasExportSettings(node.id);
     this.dispatchLayerHierarchyChanged();
     await this.history?.capture();
 
@@ -1383,87 +1378,94 @@ export class CCDApp extends EventTarget {
     );
   }
 
-  getNodeExportSettings(nodeId: string): NodeExportSettings | null {
+  getExportSettingIds(nodeId: string): string[] {
     const node = this.findNodeById(this.objectLayer, nodeId);
-    if (!node) return null;
-    this.ensureNodeHasExportSettings(nodeId);
-    const linkedPresetIds = this.exportPresetStore.nodePresetIds[nodeId] ?? [];
-    return {
-      presets: linkedPresetIds
-        .map((presetId) => this.exportPresetStore.presets[presetId])
-        .filter((preset): preset is NodeExportPreset => Boolean(preset))
-        .map((preset) => ({ ...preset })),
-    };
+    if (!node) return [];
+    return [...this.getLinkedPresetIds(nodeId)];
   }
 
-  async setNodeExportSettings(
+  getAllExportSettings(): ExportSettingRecord[] {
+    return Object.entries(this.exportPresetStore.presets).map(([id, preset]) => ({
+      id,
+      preset: { ...preset },
+      linkedNodeIds: this.getExportPresetUsage(id),
+    }));
+  }
+
+  async addExportSetting(
     nodeId: string,
-    settings: NodeExportSettings,
-    options: { recordHistory?: boolean } = {}
-  ): Promise<boolean> {
+    preset: Omit<Partial<NodeExportPreset>, 'id'> & { id?: string },
+    options: ExportPresetEditOptions = {}
+  ): Promise<NodeExportPreset | null> {
     const node = this.findNodeById(this.objectLayer, nodeId);
-    if (!node) return false;
-    const normalized = normalizeNodeExportSettings(settings);
-    const presetIds: string[] = [];
-    normalized.presets.forEach((preset, index) => {
-      const scopedId = this.toScopedPresetId(nodeId, preset.id || `preset-${index + 1}`);
-      const normalizedPreset = normalizeNodeExportPreset({ ...preset, id: scopedId }, index);
-      this.exportPresetStore.presets[scopedId] = normalizedPreset;
-      presetIds.push(scopedId);
+    if (!node) return null;
+    this.ensureNodePresetLinkList(nodeId);
+
+    const requestedId =
+      typeof preset.id === 'string' && preset.id.trim()
+        ? preset.id.trim()
+        : this.createExportPresetId('preset');
+    const presetId = this.ensureUniquePresetId(requestedId, 'preset');
+    const normalized = normalizeNodeExportPreset({ ...preset, id: presetId });
+    this.exportPresetStore.presets[presetId] = normalized;
+
+    const linked = this.getLinkedPresetIds(nodeId);
+    if (!linked.includes(presetId)) {
+      this.exportPresetStore.nodePresetIds[nodeId] = [...linked, presetId];
+    }
+    if (options.recordHistory !== false) {
+      await this.history?.capture();
+    }
+    return { ...normalized };
+  }
+
+  getExportSettingById(presetId: string): NodeExportPreset | null {
+    const preset = this.exportPresetStore.presets[presetId];
+    return preset ? { ...preset } : null;
+  }
+
+  async editExportSetting(
+    presetId: string,
+    patch: Partial<NodeExportPreset>,
+    options: ExportPresetEditOptions = {}
+  ): Promise<NodeExportPreset | null> {
+    const current = this.exportPresetStore.presets[presetId];
+    if (!current) return null;
+    const normalized = normalizeNodeExportPreset({ ...current, ...patch, id: presetId });
+    this.exportPresetStore.presets[presetId] = normalized;
+    if (options.recordHistory !== false) {
+      await this.history?.capture();
+    }
+    return { ...normalized };
+  }
+
+  async deleteExportSetting(
+    presetId: string,
+    options: ExportPresetEditOptions = {}
+  ): Promise<boolean> {
+    if (!this.exportPresetStore.presets[presetId]) return false;
+    Object.entries(this.exportPresetStore.nodePresetIds).forEach(([nodeId, presetIds]) => {
+      const filtered = presetIds.filter((id) => id !== presetId);
+      if (filtered.length) {
+        this.exportPresetStore.nodePresetIds[nodeId] = filtered;
+      } else {
+        delete this.exportPresetStore.nodePresetIds[nodeId];
+      }
     });
-    this.exportPresetStore.nodePresetIds[nodeId] = presetIds;
-    this.pruneOrphanExportPresets();
+    delete this.exportPresetStore.presets[presetId];
+    this.ensureExportStoreConsistency();
     if (options.recordHistory !== false) {
       await this.history?.capture();
     }
     return true;
   }
 
-  async upsertNodeExportPreset(
-    nodeId: string,
-    preset: Partial<NodeExportPreset> & { id?: string },
-    options: { recordHistory?: boolean } = {}
-  ): Promise<NodeExportPreset | null> {
+  async exportNodeByPreset(nodeId: string, presetId: string): Promise<NodeExportAsset | null> {
     const node = this.findNodeById(this.objectLayer, nodeId);
     if (!node) return null;
-    this.ensureNodeHasExportSettings(nodeId);
-
-    const existing = this.exportPresetStore.nodePresetIds[nodeId] ?? [];
-    const requestedId = typeof preset.id === 'string' && preset.id.trim() ? preset.id.trim() : '';
-    const resolvedId = requestedId
-      ? this.resolveNodePresetId(nodeId, requestedId)
-      : this.toScopedPresetId(nodeId, `preset-${existing.length + 1}`);
-    const nextPreset = normalizeNodeExportPreset(
-      {
-        ...preset,
-        id: resolvedId,
-      },
-      existing.length
-    );
-    this.exportPresetStore.presets[resolvedId] = nextPreset;
-    if (!existing.includes(resolvedId)) {
-      this.exportPresetStore.nodePresetIds[nodeId] = [...existing, resolvedId];
-    }
-
-    if (options.recordHistory !== false) {
-      await this.history?.capture();
-    }
-    return { ...nextPreset };
-  }
-
-  async exportNodeByPreset(
-    nodeId: string,
-    options: ExportNodePresetOptions = {}
-  ): Promise<NodeExportAsset | null> {
-    const node = this.findNodeById(this.objectLayer, nodeId);
-    if (!node) return null;
-    const settings = this.getNodeExportSettings(nodeId);
-    if (!settings) return null;
-    const fallbackToFirstPreset = options.fallbackToFirstPreset !== false;
-    let preset = options.presetId ? this.findPresetForNode(nodeId, settings.presets, options.presetId) : settings.presets[0];
-    if (!preset && fallbackToFirstPreset) {
-      preset = settings.presets[0];
-    }
+    const linkedIds = this.getLinkedPresetIds(nodeId);
+    if (!linkedIds.includes(presetId)) return null;
+    const preset = this.exportPresetStore.presets[presetId];
     if (!preset) return null;
 
     const normalizedPreset = normalizeNodeExportPreset(preset);
@@ -1539,15 +1541,11 @@ export class CCDApp extends EventTarget {
   }
 
   async exportNodesByPreset(
-    requests: Array<{ nodeId: string; presetId?: string }>,
-    options: ExportNodePresetOptions = {}
+    requests: Array<{ nodeId: string; presetId: string }>
   ): Promise<NodeExportAsset[]> {
     const results: NodeExportAsset[] = [];
     for (const request of requests) {
-      const asset = await this.exportNodeByPreset(request.nodeId, {
-        presetId: request.presetId ?? options.presetId,
-        fallbackToFirstPreset: options.fallbackToFirstPreset,
-      });
+      const asset = await this.exportNodeByPreset(request.nodeId, request.presetId);
       if (asset) {
         results.push(asset);
       }
@@ -1568,37 +1566,8 @@ export class CCDApp extends EventTarget {
   }
 
   private importExportPresetStore(doc: SceneDocument): void {
-    const normalizedStore = normalizeExportPresetStore((doc as any).exportStore);
-    const hasStoreData =
-      Object.keys(normalizedStore.presets).length > 0 ||
-      Object.keys(normalizedStore.nodePresetIds).length > 0;
-    if (hasStoreData) {
-      this.exportPresetStore = normalizedStore;
-    } else {
-      this.exportPresetStore = this.collectLegacyExportStoreFromNodes((doc as any).nodes ?? []);
-    }
+    this.exportPresetStore = normalizeExportPresetStore((doc as any).exportStore);
     this.ensureExportStoreConsistency();
-  }
-
-  private collectLegacyExportStoreFromNodes(serializedNodes: any[]): ExportPresetStore {
-    const presets: Record<string, NodeExportPreset> = {};
-    const nodePresetIds: Record<string, string[]> = {};
-
-    const walk = (node: any) => {
-      if (!node || typeof node !== 'object' || typeof node.id !== 'string') return;
-      const rawPresets = Array.isArray(node.exportSettings?.presets) ? node.exportSettings.presets : [];
-      if (rawPresets.length) {
-        nodePresetIds[node.id] = rawPresets.map((rawPreset: any, index: number) => {
-          const scopedId = this.toScopedPresetId(node.id, String(rawPreset?.id ?? `preset-${index + 1}`));
-          presets[scopedId] = normalizeNodeExportPreset({ ...rawPreset, id: scopedId }, index);
-          return scopedId;
-        });
-      }
-      const children = Array.isArray(node.children) ? node.children : [];
-      children.forEach(walk);
-    };
-    serializedNodes.forEach(walk);
-    return { presets, nodePresetIds };
   }
 
   private ensureExportStoreConsistency(): void {
@@ -1615,24 +1584,6 @@ export class CCDApp extends EventTarget {
     });
     this.exportPresetStore.nodePresetIds = validNodePresetIds;
     this.pruneOrphanExportPresets();
-    existingNodeIds.forEach((nodeId) => this.ensureNodeHasExportSettings(nodeId));
-  }
-
-  private ensureNodeHasExportSettings(nodeId: string): void {
-    const list = this.exportPresetStore.nodePresetIds[nodeId];
-    if (Array.isArray(list) && list.length) return;
-    const defaultScopedId = this.toScopedPresetId(nodeId, 'png-1x');
-    this.exportPresetStore.presets[defaultScopedId] = normalizeNodeExportPreset({
-      id: defaultScopedId,
-      format: 'png',
-      scale: 1,
-      suffix: '',
-      padding: 0,
-      backgroundMode: 'auto',
-      imageEmbed: 'original',
-      imageMaxEdge: 2048,
-    });
-    this.exportPresetStore.nodePresetIds[nodeId] = [defaultScopedId];
   }
 
   private pruneOrphanExportPresets(): void {
@@ -1647,46 +1598,36 @@ export class CCDApp extends EventTarget {
     });
   }
 
-  private toScopedPresetId(nodeId: string, presetId: string): string {
-    const normalized = String(presetId || 'preset').trim() || 'preset';
-    const raw = normalized.startsWith(`${nodeId}:`) ? normalized.slice(nodeId.length + 1) : normalized;
-    return `${nodeId}:${raw}`;
+  private createExportPresetId(seed = 'preset'): string {
+    const sanitized = sanitizeExportFileBaseName(seed).toLowerCase().replace(/[.]/g, '_') || 'preset';
+    return this.ensureUniquePresetId(`exp_${sanitized}`, sanitized);
   }
 
-  private resolveNodePresetId(nodeId: string, requestedId: string): string {
-    const direct = this.exportPresetStore.presets[requestedId];
-    if (direct) {
-      const linked = this.exportPresetStore.nodePresetIds[nodeId] ?? [];
-      if (linked.includes(requestedId)) return requestedId;
+  private ensureUniquePresetId(
+    desiredId: string,
+    fallbackSeed: string,
+    against?: Record<string, NodeExportPreset>
+  ): string {
+    const target = against ?? this.exportPresetStore.presets;
+    const normalized = (desiredId || '').trim();
+    if (normalized && !target[normalized]) return normalized;
+    const base = sanitizeExportFileBaseName(fallbackSeed).toLowerCase().replace(/[.]/g, '_') || 'preset';
+    let candidate = `exp_${base}_${crypto.randomUUID().slice(0, 8)}`;
+    while (target[candidate]) {
+      candidate = `exp_${base}_${crypto.randomUUID().slice(0, 8)}`;
     }
-    const scoped = this.toScopedPresetId(nodeId, requestedId);
-    return scoped;
+    return candidate;
   }
 
-  private findPresetForNode(
-    nodeId: string,
-    presets: NodeExportPreset[],
-    requestedId: string
-  ): NodeExportPreset | undefined {
-    return (
-      presets.find((item) => item.id === requestedId) ??
-      presets.find((item) => item.id === this.toScopedPresetId(nodeId, requestedId))
-    );
+  private getLinkedPresetIds(nodeId: string): string[] {
+    const list = this.exportPresetStore.nodePresetIds[nodeId] ?? [];
+    return list.filter((presetId) => Boolean(this.exportPresetStore.presets[presetId]));
   }
 
-  async updateExportPreset(
-    presetId: string,
-    patch: Partial<NodeExportPreset>,
-    options: { recordHistory?: boolean } = {}
-  ): Promise<NodeExportPreset | null> {
-    const current = this.exportPresetStore.presets[presetId];
-    if (!current) return null;
-    const normalized = normalizeNodeExportPreset({ ...current, ...patch, id: presetId });
-    this.exportPresetStore.presets[presetId] = normalized;
-    if (options.recordHistory !== false) {
-      await this.history?.capture();
+  private ensureNodePresetLinkList(nodeId: string): void {
+    if (!this.exportPresetStore.nodePresetIds[nodeId]) {
+      this.exportPresetStore.nodePresetIds[nodeId] = [];
     }
-    return { ...normalized };
   }
 
   getExportPresetUsage(presetId: string): string[] {

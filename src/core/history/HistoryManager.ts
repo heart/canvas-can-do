@@ -173,14 +173,10 @@ export class HistoryManager {
 
     if (node.type === 'frame') {
       const data = normalized.data ?? {};
-      const legacyBackground =
-        Object.prototype.hasOwnProperty.call(data, 'background')
-          ? this.toNullableColor(data.background, '#ffffff')
-          : undefined;
       const backgroundColor =
         Object.prototype.hasOwnProperty.call(data, 'backgroundColor')
           ? this.toNullableColor(data.backgroundColor, '#ffffff')
-          : (legacyBackground ?? '#ffffff');
+          : '#ffffff';
       const borderColor = this.toColor(data.borderColor, '#A0A0A0');
       const borderWidth = Math.max(0, Math.round(this.toFiniteNumber(data.borderWidth, 1)));
       const clipContent = this.toBoolean(data.clipContent, true);
@@ -461,14 +457,10 @@ export class HistoryManager {
           }
           children.push(await this.deserializeNode(child));
         }
-        const legacyBackground =
-          Object.prototype.hasOwnProperty.call(data.data ?? {}, 'background')
-            ? (data.data?.background ?? null)
-            : undefined;
         const backgroundColor =
           Object.prototype.hasOwnProperty.call(data.data ?? {}, 'backgroundColor')
             ? (data.data?.backgroundColor ?? null)
-            : (legacyBackground ?? '#ffffff');
+            : '#ffffff';
         const borderColor = String(data.data?.borderColor ?? style.stroke ?? '#A0A0A0');
         const borderWidthRaw = Number(data.data?.borderWidth ?? style.strokeWidth ?? 1);
         const borderWidth = Number.isFinite(borderWidthRaw) ? Math.max(0, Math.round(borderWidthRaw)) : 1;

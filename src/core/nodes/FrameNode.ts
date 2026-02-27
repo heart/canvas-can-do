@@ -26,8 +26,6 @@ export class FrameNode extends BaseNode {
     backgroundColor?: string | null;
     borderColor?: string;
     borderWidth?: number;
-    // legacy alias for backward compatibility
-    background?: string | null;
     clipContent?: boolean;
     children?: BaseNode[];
   }) {
@@ -46,8 +44,7 @@ export class FrameNode extends BaseNode {
 
     this._width = options.width;
     this._height = options.height;
-    this._backgroundColor =
-      options.backgroundColor !== undefined ? options.backgroundColor : (options.background ?? '#ffffff');
+    this._backgroundColor = options.backgroundColor ?? '#ffffff';
     this._borderColor = options.borderColor ?? '#A0A0A0';
     this._borderWidth = this.normalizeBorderWidth(options.borderWidth ?? 1);
     this._clipContent = options.clipContent ?? true;
@@ -153,15 +150,6 @@ export class FrameNode extends BaseNode {
 
   private normalizeBorderWidth(value: number): number {
     return Math.max(0, Math.round(Number.isFinite(value) ? value : 0));
-  }
-
-  // legacy aliases
-  get background(): string | null {
-    return this.backgroundColor;
-  }
-
-  setBackground(background: string | null): this {
-    return this.setBackgroundColor(background);
   }
 
   get clipContent(): boolean {

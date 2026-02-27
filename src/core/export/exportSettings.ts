@@ -15,10 +15,6 @@ export interface NodeExportPreset {
   imageMaxEdge?: number;
 }
 
-export interface NodeExportSettings {
-  presets: NodeExportPreset[];
-}
-
 export interface ExportPresetStore {
   presets: Record<string, NodeExportPreset>;
   nodePresetIds: Record<string, string[]>;
@@ -33,10 +29,6 @@ export const DEFAULT_NODE_EXPORT_PRESET: NodeExportPreset = {
   backgroundMode: 'auto',
   imageEmbed: 'original',
   imageMaxEdge: 2048,
-};
-
-export const DEFAULT_NODE_EXPORT_SETTINGS: NodeExportSettings = {
-  presets: [DEFAULT_NODE_EXPORT_PRESET],
 };
 
 export const DEFAULT_EXPORT_PRESET_STORE: ExportPresetStore = {
@@ -104,28 +96,6 @@ export function normalizeNodeExportPreset(input: unknown, index = 0): NodeExport
         : undefined,
     imageEmbed: sanitizeImageEmbed(preset.imageEmbed),
     imageMaxEdge: sanitizeMaxEdge(preset.imageMaxEdge),
-  };
-}
-
-export function normalizeNodeExportSettings(input: unknown): NodeExportSettings {
-  const source = (input && typeof input === 'object' ? input : {}) as Partial<NodeExportSettings>;
-  const presetsInput = Array.isArray(source.presets) ? source.presets : [];
-  const normalizedPresets = presetsInput
-    .map((preset, index) => normalizeNodeExportPreset(preset, index))
-    .filter((preset, index, arr) => arr.findIndex((p) => p.id === preset.id) === index);
-
-  return {
-    presets: normalizedPresets.length
-      ? normalizedPresets
-      : DEFAULT_NODE_EXPORT_SETTINGS.presets.map((preset, index) =>
-          normalizeNodeExportPreset(preset, index)
-        ),
-  };
-}
-
-export function cloneNodeExportSettings(settings: NodeExportSettings): NodeExportSettings {
-  return {
-    presets: settings.presets.map((preset) => ({ ...preset })),
   };
 }
 
