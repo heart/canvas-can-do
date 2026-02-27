@@ -119,6 +119,7 @@ export class StarNode extends BaseNode {
         desc: 'Number of star points',
         min: 2,
         step: 1,
+        group: 'Geometry',
       },
       {
         name: 'Inner Radius',
@@ -127,6 +128,18 @@ export class StarNode extends BaseNode {
         value: this.innerRadius,
         desc: 'Inner radius',
         min: 0,
+        group: 'Geometry',
+      },
+      {
+        name: 'Inner Ratio',
+        key: 'innerRatio',
+        type: 'float',
+        value: this.outerRadius > 0 ? this.innerRadius / this.outerRadius : 0.5,
+        desc: 'Inner radius ratio',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        group: 'Geometry',
       },
       {
         name: 'Outer Radius',
@@ -135,6 +148,7 @@ export class StarNode extends BaseNode {
         value: this.outerRadius,
         desc: 'Outer radius',
         min: 0,
+        group: 'Geometry',
       },
     ];
   }

@@ -126,6 +126,33 @@ Experimental tooling (e.g. rolldown-vite) may be used **only** in demos or exper
 
 ---
 
+## Properties API Conventions
+
+Canvas Can Do exposes node properties to host UIs through `getProps()` on each node type. Hosts listen for the `properties:changed` event and render a properties panel using the returned metadata. When a user edits a field, the host calls `CCDApp.applyNodeProperties()` with the same `key` values to update the scene.
+
+Guiding rules:
+- `getProps()` must always include the parent `BaseNode.getProps()` so shared fields stay consistent.
+- The **order of items in the array is the display order** for the UI.
+- Each property can carry an optional `group` to support UI grouping. The current group set is:
+  - `Meta`, `Transform`, `Appearance`, `Geometry`, `Text`, `Line`, `Image`
+- `applyNodeProperties()` must support every `key` that appears in `getProps()` so UI changes always round‑trip.
+
+Current grouping and order:
+- **Meta**: `name`, `visible`, `locked`
+- **Transform**: `x`, `y`, `width`, `height`, `scaleX`, `scaleY`, `rotation`
+- **Appearance**: `fill`, `stroke`, `strokeWidth`, `opacity`
+- **Geometry** (per shape):
+  - `Circle`: `radius`
+  - `Rectangle`: `cornerRadius`
+  - `Star`: `points`, `outerRadius`, `innerRadius`, `innerRatio`
+- **Text**: `text`, `fontSize`, `fontFamily`, `fontWeight`, `fontStyle`
+- **Line**: `startX`, `startY`, `endX`, `endY`
+- **Image**: `source`
+
+Notes:
+- `Star` supports `innerRatio` (0–1) for UI‑friendly control of star "sharpness." `applyNodeProperties()` handles `points`, `innerRadius`, `outerRadius`, and `innerRatio` together to keep dimensions consistent.
+- `exportSVG()` uses the same node properties, so changes made via `applyNodeProperties()` will be reflected in SVG output.
+
 ## Non-Goals (Explicit)
 
 Canvas Can Do is **NOT**:

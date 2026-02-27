@@ -1,0 +1,169 @@
+import { Graphics } from 'pixi.js';
+import { BaseNode } from './BaseNode';
+import type { Style, NodePropertyDescriptor } from './BaseNode';
+
+export class FrameNode extends BaseNode {
+  readonly type = 'frame' as const;
+  protected backgroundGraphics: Graphics;
+  protected clipGraphics: Graphics;
+  private _backgroundColor: string | null;
+  private _clipContent: boolean;
+
+  constructor(options: {
+    id?: string;
+    name?: string;
+    width: number;
+    height: number;
+    x?: number;
+    y?: number;
+    rotation?: number;
+    scale?: number | { x: number; y: number };
+    style?: Style;
+    visible?: boolean;
+    locked?: boolean;
+    backgroundColor?: string | null;
+    clipContent?: boolean;
+    children?: BaseNode[];
+  }) {
+    super({
+      id: options.id,
+      type: 'frame',
+      name: options.name,
+      x: options.x,
+      y: options.y,
+      rotation: options.rotation,
+      scale: options.scale,
+      style: options.style,
+      visible: options.visible,
+      locked: options.locked,
+    });
+
+    this._width = options.width;
+    this._height = options.height;
+    this._backgroundColor = options.backgroundColor ?? '#ffffff';
+    this._clipContent = options.clipContent ?? true;
+
+    this.backgroundGraphics = new Graphics();
+    this.clipGraphics = new Graphics();
+    this.addChild(this.backgroundGraphics);
+    this.addChild(this.clipGraphics);
+    this.redraw();
+
+    options.children?.forEach((child) => {
+      this.addChild(child);
+    });
+  }
+
+  protected redraw(): void {
+    const opacity = this.style.opacity ?? 1;
+
+    this.backgroundGraphics.clear();
+    this.backgroundGraphics.rect(0, 0, this.width, this.height);
+    if (this._backgroundColor !== null) {
+      const fillColor = parseInt(this._backgroundColor.replace('#', ''), 16);
+      this.backgroundGraphics.fill({
+        color: fillColor,
+        alpha: opacity,
+      });
+    }
+
+    this.clipGraphics.clear();
+    this.clipGraphics.rect(0, 0, this.width, this.height);
+    this.clipGraphics.fill({ color: 0xffffff, alpha: 1 });
+    this.mask = this._clipContent ? this.clipGraphics : null;
+  }
+
+  get width(): number {
+    return this._width;
+  }
+
+  set width(value: number) {
+    this._width = value;
+    this.redraw();
+  }
+
+  get height(): number {
+    return this._height;
+  }
+
+  set height(value: number) {
+    this._height = value;
+    this.redraw();
+  }
+
+  setStyle(style: Partial<Style>): this {
+    this.style = { ...this.style, ...style };
+    if (style.fill !== undefined) {
+      this.setBackgroundColor(style.fill === null ? null : String(style.fill));
+    }
+    this.redraw();
+    return this;
+  }
+
+  get backgroundColor(): string | null {
+    return this._backgroundColor;
+  }
+
+  setBackgroundColor(backgroundColor: string | null): this {
+    this._backgroundColor = backgroundColor;
+    this.redraw();
+    return this;
+  }
+
+  get clipContent(): boolean {
+    return this._clipContent;
+  }
+
+  setClipContent(enabled: boolean): this {
+    this._clipContent = enabled;
+    this.redraw();
+    return this;
+  }
+
+  getProps(): NodePropertyDescriptor[] {
+    const baseProps = super
+      .getProps()
+      .filter((prop) => prop.key !== 'fill' && prop.key !== 'stroke' && prop.key !== 'strokeWidth');
+    return [
+      ...baseProps,
+      {
+        name: 'Background Color',
+        key: 'backgroundColor',
+        type: 'color',
+        value: this.backgroundColor,
+        desc: 'Frame background color (null = transparent)',
+        group: 'Appearance',
+      },
+      {
+        name: 'Clip Content',
+        key: 'clipContent',
+        type: 'boolean',
+        value: this.clipContent,
+        desc: 'Mask children to frame bounds',
+        group: 'Appearance',
+      },
+    ];
+  }
+
+  clone(offsetX = 0, offsetY = 0): FrameNode {
+    const clonedChildren = this.children
+      .filter((child): child is BaseNode => child instanceof BaseNode)
+      .map((child) => child.clone(0, 0));
+
+    return new FrameNode({
+      name: this.name,
+      width: this.width,
+      height: this.height,
+      x: this.position.x + offsetX,
+      y: this.position.y + offsetY,
+      rotation: this.rotation,
+      scale: { x: this.scale.x, y: this.scale.y },
+      style: { ...this.style },
+      visible: this.visible,
+      locked: this.locked,
+      backgroundColor: this.backgroundColor,
+      clipContent: this.clipContent,
+      children: clonedChildren,
+    });
+  }
+}

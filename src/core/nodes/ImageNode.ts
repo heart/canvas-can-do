@@ -120,6 +120,9 @@ export class ImageNode extends BaseNode {
   protected redraw(): void {
     this.sprite.width = this._width;
     this.sprite.height = this._height;
+    const rawOpacity = Number(this.style.opacity ?? 1);
+    const opacity = Number.isFinite(rawOpacity) ? Math.max(0, Math.min(1, rawOpacity)) : 1;
+    this.sprite.alpha = opacity;
   }
 
   get width(): number {
@@ -142,6 +145,7 @@ export class ImageNode extends BaseNode {
 
   setStyle(style: Partial<Style>): this {
     this.style = { ...this.style, ...style };
+    this.redraw();
     return this;
   }
 
@@ -154,6 +158,7 @@ export class ImageNode extends BaseNode {
         type: 'string',
         value: typeof this.source === 'string' ? this.source : '',
         desc: 'Image source',
+        group: 'Image',
       },
     ];
   }

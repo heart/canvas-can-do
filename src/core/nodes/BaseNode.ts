@@ -1,15 +1,34 @@
-import { Container } from 'pixi.js';
+import { Container, Point } from 'pixi.js';
 import type { TextStyleFontWeight } from 'pixi.js';
 
-export type NodeType = 'rectangle' | 'circle' | 'text' | 'line' | 'ellipse' | 'star' | 'image' | 'group';
+export type NodeType =
+  | 'rectangle'
+  | 'circle'
+  | 'text'
+  | 'line'
+  | 'ellipse'
+  | 'star'
+  | 'image'
+  | 'group'
+  | 'frame';
 
-export type PropertyType = 'string' | 'int' | 'float' | 'color' | 'boolean';
+export type PropertyType = 'string' | 'int' | 'float' | 'color' | 'boolean' | 'enum';
+export type PropertyGroup =
+  | 'Meta'
+  | 'Transform'
+  | 'Appearance'
+  | 'Geometry'
+  | 'Text'
+  | 'Line'
+  | 'Image';
 
 export interface NodePropertyDescriptor {
   name: string;
   key: string;
   type: PropertyType;
   value: string | number | boolean | null;
+  options?: Array<string | number>;
+  group?: PropertyGroup;
   desc?: string;
   min?: number;
   max?: number;
@@ -25,6 +44,11 @@ export interface InspectableNode {
 
 export type PropertiesChangedEvent = CustomEvent<{
   nodes: InspectableNode[];
+}>;
+
+export type SelectionChangedEvent = CustomEvent<{
+  nodes: InspectableNode[];
+  selectedIds: string[];
 }>;
 
 export interface Style {
@@ -168,6 +192,10 @@ export class BaseNode extends Container {
   }
 
   getProps(): NodePropertyDescriptor[] {
+    const globalPosition = this.parent
+      ? this.parent.toGlobal(new Point(this.position.x, this.position.y))
+      : new Point(this.position.x, this.position.y);
+
     return [
       {
         name: 'Name',
@@ -175,57 +203,7 @@ export class BaseNode extends Container {
         type: 'string',
         value: this.name,
         desc: 'Display name',
-      },
-      {
-        name: 'X',
-        key: 'x',
-        type: 'float',
-        value: this.position.x,
-        desc: 'X position',
-      },
-      {
-        name: 'Y',
-        key: 'y',
-        type: 'float',
-        value: this.position.y,
-        desc: 'Y position',
-      },
-      {
-        name: 'Width',
-        key: 'width',
-        type: 'float',
-        value: this.width,
-        desc: 'Width',
-        min: 0,
-      },
-      {
-        name: 'Height',
-        key: 'height',
-        type: 'float',
-        value: this.height,
-        desc: 'Height',
-        min: 0,
-      },
-      {
-        name: 'Scale X',
-        key: 'scaleX',
-        type: 'float',
-        value: this.scale.x,
-        desc: 'Horizontal scale',
-      },
-      {
-        name: 'Scale Y',
-        key: 'scaleY',
-        type: 'float',
-        value: this.scale.y,
-        desc: 'Vertical scale',
-      },
-      {
-        name: 'Rotation',
-        key: 'rotation',
-        type: 'float',
-        value: this.rotation,
-        desc: 'Rotation (radians)',
+        group: 'Meta',
       },
       {
         name: 'Visible',
@@ -233,6 +211,7 @@ export class BaseNode extends Container {
         type: 'boolean',
         value: this.visible,
         desc: 'Toggle visibility',
+        group: 'Meta',
       },
       {
         name: 'Locked',
@@ -240,6 +219,65 @@ export class BaseNode extends Container {
         type: 'boolean',
         value: this.locked,
         desc: 'Lock editing',
+        group: 'Meta',
+      },
+      {
+        name: 'X',
+        key: 'x',
+        type: 'int',
+        value: Math.round(globalPosition.x),
+        desc: 'X position',
+        group: 'Transform',
+      },
+      {
+        name: 'Y',
+        key: 'y',
+        type: 'int',
+        value: Math.round(globalPosition.y),
+        desc: 'Y position',
+        group: 'Transform',
+      },
+      {
+        name: 'Width',
+        key: 'width',
+        type: 'int',
+        value: this.width,
+        desc: 'Width',
+        min: 0,
+        group: 'Transform',
+      },
+      {
+        name: 'Height',
+        key: 'height',
+        type: 'int',
+        value: this.height,
+        desc: 'Height',
+        min: 0,
+        group: 'Transform',
+      },
+      {
+        name: 'Scale X',
+        key: 'scaleX',
+        type: 'float',
+        value: this.scale.x,
+        desc: 'Horizontal scale',
+        group: 'Transform',
+      },
+      {
+        name: 'Scale Y',
+        key: 'scaleY',
+        type: 'float',
+        value: this.scale.y,
+        desc: 'Vertical scale',
+        group: 'Transform',
+      },
+      {
+        name: 'Rotation',
+        key: 'rotation',
+        type: 'float',
+        value: this.rotation,
+        desc: 'Rotation (radians)',
+        group: 'Transform',
       },
       {
         name: 'Fill',
@@ -247,6 +285,7 @@ export class BaseNode extends Container {
         type: 'color',
         value: this.toColorString(this.style.fill),
         desc: 'Fill color',
+        group: 'Appearance',
       },
       {
         name: 'Stroke',
@@ -254,14 +293,17 @@ export class BaseNode extends Container {
         type: 'color',
         value: this.toColorString(this.style.stroke),
         desc: 'Stroke color',
+        group: 'Appearance',
       },
       {
         name: 'Stroke Width',
         key: 'strokeWidth',
-        type: 'float',
-        value: this.style.strokeWidth ?? 1,
+        type: 'int',
+        value: Math.max(0, Math.round(this.style.strokeWidth ?? 1)),
         desc: 'Stroke width',
         min: 0,
+        step: 1,
+        group: 'Appearance',
       },
       {
         name: 'Opacity',
@@ -272,6 +314,7 @@ export class BaseNode extends Container {
         min: 0,
         max: 1,
         step: 0.01,
+        group: 'Appearance',
       },
     ];
   }
@@ -289,5 +332,6 @@ export class BaseNode extends Container {
 declare global {
   interface WindowEventMap {
     'properties:changed': PropertiesChangedEvent;
+    'selection:changed': SelectionChangedEvent;
   }
 }

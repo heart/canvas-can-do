@@ -1,20 +1,39 @@
-import { Application, Container, Matrix, Point, RenderTexture, Color } from 'pixi.js';
+import './ccd.css';
+import { Application, Container, Matrix, Point, RenderTexture, Color, Text } from 'pixi.js';
 import { PointerController } from './PointerController';
 import type { ShapeCreatedEvent } from './events';
 import { LayerHierarchy } from './core/layers/LayerHierarchy';
 import { BaseNode } from './core/nodes/BaseNode';
 import type { InspectableNode } from './core/nodes';
 import { ImageNode } from './core/nodes/ImageNode';
+import { TextNode } from './core/nodes/TextNode';
+import { GroupNode } from './core/nodes/GroupNode';
+import { FrameNode } from './core/nodes/FrameNode';
 import { HistoryManager } from './core/history/HistoryManager';
 import type { SceneDocument } from './core/history/HistoryManager';
 import { RulerOverlay } from './core/ui/RulerOverlay';
+import {
+  DEFAULT_EXPORT_PRESET_STORE,
+  normalizeExportPresetStore,
+  normalizeNodeExportPreset,
+  sanitizeExportFileBaseName,
+  type ExportPresetStore,
+  type NodeExportPreset,
+} from './core/export/exportSettings';
+import {
+  DEFAULT_FONT_FAMILY,
+  normalizeFontFamily,
+  normalizeFontStyle,
+  normalizeFontWeight,
+} from './core/fonts/fontOptions';
 
 export const version = '0.0.0';
+export type { NodeExportPreset } from './core/export/exportSettings';
 
 export type ToolName =
   | 'select'
+  | 'frame'
   | 'rectangle'
-  | 'circle'
   | 'text'
   | 'line'
   | 'ellipse'
@@ -26,10 +45,74 @@ export interface NodePropUpdate {
   props: Record<string, string | number | boolean | null>;
 }
 
+export interface AddedNodeResult {
+  id: string;
+  type: InspectableNode['type'];
+  inspectable: InspectableNode;
+  update: NodePropUpdate;
+}
+
+export interface AddFrameOptions {
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
+  space?: 'world' | 'screen';
+  name?: string;
+  backgroundColor?: string | null;
+  clipContent?: boolean;
+}
+
+export type LayerMovePosition = 'before' | 'after' | 'inside';
+
+export interface FlatLayerItem {
+  id: string;
+  type: BaseNode['type'];
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  parentId: string | null;
+  depth: number;
+  zIndex: number;
+  isGroup: boolean;
+  childCount: number;
+}
+
+export interface GetFlatLayersOptions {
+  parentId?: string | null;
+  recursive?: boolean;
+  topFirst?: boolean;
+}
+
+export interface LayerMoveValidation {
+  ok: boolean;
+  reason?: string;
+}
+
+export interface NodeExportAsset {
+  nodeId: string;
+  presetId: string;
+  format: 'png' | 'jpg' | 'svg';
+  filename: string;
+  mimeType: string;
+  content: string;
+  contentType: 'dataUrl' | 'text';
+}
+
+export interface ExportSettingRecord {
+  id: string;
+  preset: NodeExportPreset;
+  linkedNodeIds: string[];
+}
+
+export interface ExportPresetEditOptions {
+  recordHistory?: boolean;
+}
+
 export const TOOL_CURSOR: Record<ToolName, string | null> = {
   select: null,
+  frame: 'crosshair',
   rectangle: 'crosshair',
-  circle: 'crosshair',
   ellipse: 'crosshair',
   line: 'crosshair',
   star: 'crosshair',
@@ -37,7 +120,7 @@ export const TOOL_CURSOR: Record<ToolName, string | null> = {
   pan: 'grab',
 };
 
-export class CCDApp {
+export class CCDApp extends EventTarget {
   app = new Application();
 
   world = new Container();
@@ -51,10 +134,103 @@ export class CCDApp {
   pointerController?: PointerController;
   history?: HistoryManager;
   private ruler?: RulerOverlay;
+  private zoomLabel?: Text;
+  private shortcutsEnabled = true;
+  private objectSnapEnabled = true;
+  private isInitialized = false;
+  private exportPresetStore: ExportPresetStore = { ...DEFAULT_EXPORT_PRESET_STORE };
+
+  private readonly syncStageHitArea = () => {
+    this.app.stage.hitArea = this.app.screen;
+  };
+  private readonly updateRuler = () => {
+    this.ruler?.update();
+  };
+  private readonly updateZoomLabel = () => {
+    if (!this.zoomLabel) return;
+    const percent = Math.round(this.world.scale.x * 100);
+    this.zoomLabel.text = `zoom: ${percent}%`;
+    const margin = 10;
+    const rulerRightInset = 24;
+    this.zoomLabel.position.set(
+      Math.round(this.app.screen.width - this.zoomLabel.width - margin - rulerRightInset),
+      Math.round(this.app.screen.height - this.zoomLabel.height - margin)
+    );
+  };
+  private readonly onZoomKeyDown = (e: KeyboardEvent) => this.handleZoomKeys(e);
+  private readonly onUndoRedoKeyDown = (e: KeyboardEvent) => this.handleUndoRedoKeys(e);
+  private readonly onToolKeyDown = (e: KeyboardEvent) => this.handleToolKeys(e);
+  private readonly onCanvasWheel = (e: WheelEvent) => this.handleWheel(e);
+  private readonly onHostDragOver = (e: DragEvent) => {
+    e.preventDefault();
+  };
+  private readonly onHostDrop = (e: DragEvent) => {
+    this.handleDrop(e);
+  };
+  private readonly onHostPaste = (e: ClipboardEvent) => {
+    this.handlePaste(e);
+  };
+  private readonly onWindowPaste = (e: ClipboardEvent) => {
+    this.handlePaste(e);
+  };
+  private readonly onPointerControllerShapeCreated = ((e: ShapeCreatedEvent) => {
+    const shape = e.detail.shape;
+    const parentId = e.detail.parentId ?? null;
+    this.objectLayer.addChild(shape);
+    if (parentId) {
+      const target = this.findNodeById(this.objectLayer, parentId);
+      if (target instanceof FrameNode && !target.locked) {
+        const transform = {
+          origin: shape.toGlobal(new Point(0, 0)),
+          xAxis: shape.toGlobal(new Point(1, 0)),
+          yAxis: shape.toGlobal(new Point(0, 1)),
+        };
+        this.objectLayer.removeChild(shape);
+        target.addChild(shape);
+        this.applyWorldTransformToParent(shape, target, transform);
+      }
+    }
+    this.dispatchLayerHierarchyChanged();
+    this.useTool('select');
+    this.history?.capture();
+  }) as EventListener;
+  private readonly onPointerControllerViewportChanged = ((e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    const evt = new CustomEvent('viewport:changed', { detail });
+    this.dispatchOnHost(evt);
+  }) as EventListener;
+  private readonly onPointerControllerHoverChanged = ((e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    const evt = new CustomEvent('hover:changed', { detail });
+    this.dispatchOnHost(evt);
+  }) as EventListener;
+  private readonly onHostPointerDown = (e: PointerEvent) => {
+    this.pointerController?.onPointerDown(e);
+  };
+  private readonly onHostPointerMove = (e: PointerEvent) => {
+    this.pointerController?.onPointerMove(e);
+  };
+  private readonly onHostPointerUp = (e: PointerEvent) => {
+    this.pointerController?.onPointerUp(e);
+  };
+  private readonly onHostDoubleClick = (e: MouseEvent) => {
+    this.pointerController?.onDoubleClick(e);
+  };
+  private readonly onHostPointerCancel = (_: PointerEvent) => {
+    this.pointerController?.cancel();
+  };
+  private pointerControllerKeyDownHandler?: (e: KeyboardEvent) => void;
+  private pointerControllerKeyUpHandler?: (e: KeyboardEvent) => void;
 
   activeTool: ToolName = 'select';
 
+  constructor() {
+    super();
+  }
+
   async init(host: HTMLElement) {
+    if (this.isInitialized) return;
+
     await this.app.init({
       background: '#F2F2F2',
       resizeTo: host, // ให้ Pixi จัดการ resize เอง
@@ -84,12 +260,16 @@ export class CCDApp {
     this.uiLayer.eventMode = 'passive';
 
     // ถ้าต้อง sync hitArea ให้ชัวร์
-    this.app.ticker.add(() => {
-      this.app.stage.hitArea = this.app.screen;
-    });
+    this.app.ticker.add(this.syncStageHitArea);
 
     this.initPointerController();
-    this.history = new HistoryManager(this.objectLayer);
+    this.history = new HistoryManager(this.objectLayer, {
+      getExportStore: () => this.snapshotExportPresetStore(),
+      setExportStore: (store) => {
+        this.exportPresetStore = normalizeExportPresetStore(store);
+        this.ensureExportStoreConsistency();
+      },
+    });
     await this.history.capture();
     this.ruler = new RulerOverlay(this.uiLayer, () => ({
       width: this.app.screen.width,
@@ -98,22 +278,49 @@ export class CCDApp {
       x: this.world.position.x,
       y: this.world.position.y,
     }));
-    this.app.ticker.add(() => this.ruler?.update());
+    this.zoomLabel = new Text({
+      text: '100%',
+      style: {
+        fontSize: 11,
+        fill: 0x111111,
+      },
+    });
+    this.zoomLabel.alpha = 0.85;
+    this.zoomLabel.eventMode = 'none';
+    this.zoomLabel.roundPixels = true;
+    this.uiLayer.addChild(this.zoomLabel);
+    this.updateZoomLabel();
+    this.app.ticker.add(this.updateRuler);
+    this.app.ticker.add(this.updateZoomLabel);
 
     // zoom hotkeys
-    window.addEventListener('keydown', this.handleZoomKeys.bind(this));
-    window.addEventListener('keydown', this.handleUndoRedoKeys.bind(this));
+    window.addEventListener('keydown', this.onZoomKeyDown);
+    window.addEventListener('keydown', this.onUndoRedoKeyDown);
+    window.addEventListener('keydown', this.onToolKeyDown);
+
+    // wheel: pan and pinch/ctrl zoom
+    this.app.canvas.addEventListener('wheel', this.onCanvasWheel, { passive: false });
 
     // drag & drop / paste images
-    this.host?.addEventListener('dragover', (e) => {
-      e.preventDefault();
-    });
-    this.host?.addEventListener('drop', (e) => {
-      this.handleDrop(e);
-    });
-    this.host?.addEventListener('paste', (e) => {
-      this.handlePaste(e);
-    });
+    this.host?.addEventListener('dragover', this.onHostDragOver);
+    this.host?.addEventListener('drop', this.onHostDrop);
+    this.host?.addEventListener('paste', this.onHostPaste);
+    window.addEventListener('paste', this.onWindowPaste);
+    this.isInitialized = true;
+  }
+
+  public setShortcutsEnabled(enabled: boolean) {
+    this.shortcutsEnabled = enabled;
+    this.pointerController?.setShortcutsEnabled(enabled);
+  }
+
+  public setObjectSnapEnabled(enabled: boolean) {
+    this.objectSnapEnabled = enabled;
+    this.pointerController?.setObjectSnapEnabled(enabled);
+  }
+
+  public isObjectSnapEnabled(): boolean {
+    return this.objectSnapEnabled;
   }
 
   initPointerController() {
@@ -125,57 +332,37 @@ export class CCDApp {
       this.app,
       this.world,
       async () => {
+        this.ensureExportStoreConsistency();
         await this.history?.capture();
-      }
+      },
+      this
     );
+    this.pointerController.setObjectSnapEnabled(this.objectSnapEnabled);
 
     // Listen for shape creation events from pointer controller
-    this.pointerController.addEventListener('shape:created', ((e: ShapeCreatedEvent) => {
-      const shape = e.detail.shape;
-      this.objectLayer.addChild(shape);
-      this.dispatchLayerHierarchyChanged();
-      this.useTool('select');
-      this.history?.capture();
-    }) as EventListener);
-    this.pointerController.addEventListener('viewport:changed', ((e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      const evt = new CustomEvent('viewport:changed', { detail });
-      this.dispatchOnHost(evt);
-    }) as EventListener);
-
-    this.host?.addEventListener('pointerdown', (e) => {
-      //this.host.setPointerCapture(e.pointerId);
-      this.pointerController?.onPointerDown(e);
-    });
-
-    this.host?.addEventListener('pointermove', (e) => {
-      this.pointerController?.onPointerMove(e);
-    });
-
-    this.host?.addEventListener('pointerup', (e) => {
-      //host.releasePointerCapture(e.pointerId);
-      this.pointerController?.onPointerUp(e);
-    });
-
-    this.host?.addEventListener('dblclick', (e) => {
-      this.pointerController?.onDoubleClick(e);
-    });
-
-    this.host?.addEventListener('pointercancel', (_) => {
-      this.pointerController?.cancel();
-    });
-
-    window.addEventListener(
-      'keydown',
-      this.pointerController.handleKeyDown.bind(this.pointerController)
+    this.pointerController.addEventListener('shape:created', this.onPointerControllerShapeCreated);
+    this.pointerController.addEventListener(
+      'viewport:changed',
+      this.onPointerControllerViewportChanged
     );
-    window.addEventListener(
-      'keyup',
-      this.pointerController.handleKeyUp.bind(this.pointerController)
-    );
+    this.pointerController.addEventListener('hover:changed', this.onPointerControllerHoverChanged);
+
+    this.host?.addEventListener('pointerdown', this.onHostPointerDown);
+    this.host?.addEventListener('pointermove', this.onHostPointerMove);
+    this.host?.addEventListener('pointerup', this.onHostPointerUp);
+    this.host?.addEventListener('dblclick', this.onHostDoubleClick);
+    this.host?.addEventListener('pointercancel', this.onHostPointerCancel);
+
+    this.pointerControllerKeyDownHandler = this.pointerController.handleKeyDown.bind(this.pointerController);
+    this.pointerControllerKeyUpHandler = this.pointerController.handleKeyUp.bind(this.pointerController);
+    window.addEventListener('keydown', this.pointerControllerKeyDownHandler);
+    window.addEventListener('keyup', this.pointerControllerKeyUpHandler);
   }
 
   private handleZoomKeys(e: KeyboardEvent) {
+    if (!this.shortcutsEnabled) return;
+    if (this.isEditingText()) return;
+
     const hasMeta = e.ctrlKey || e.metaKey;
     const key = e.key;
 
@@ -193,8 +380,8 @@ export class CCDApp {
       return;
     }
 
-    // absolute zoom with digits (no ctrl/cmd)
-    if (!hasMeta) {
+    // absolute zoom with digits (ctrl/cmd + number)
+    if (hasMeta) {
       if (key === '0') {
         e.preventDefault();
         this.setZoom(1);
@@ -204,6 +391,80 @@ export class CCDApp {
         this.setZoom(level);
       }
     }
+  }
+
+  private handleToolKeys(e: KeyboardEvent) {
+    if (!this.shortcutsEnabled) return;
+    if (this.isEditingText()) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    const key = e.key.toLowerCase();
+    switch (key) {
+      case 'g':
+        e.preventDefault();
+        this.useTool('select');
+        break;
+      case 'o':
+        e.preventDefault();
+        this.useTool('ellipse');
+        break;
+      case 'r':
+        e.preventDefault();
+        this.useTool('rectangle');
+        break;
+      case 'f':
+        e.preventDefault();
+        this.useTool('frame');
+        break;
+      case 'l':
+        e.preventDefault();
+        this.useTool('line');
+        break;
+      case 's':
+        e.preventDefault();
+        this.useTool('star');
+        break;
+      case 't':
+        e.preventDefault();
+        this.useTool('text');
+        break;
+    }
+  }
+
+  private handleWheel(e: WheelEvent) {
+    if (!this.shortcutsEnabled) return;
+    if (this.isEditingText()) return;
+    if (!this.host) return;
+
+    const { deltaX, deltaY } = this.normalizeWheel(e);
+    const hasMeta = e.ctrlKey || e.metaKey;
+
+    if (hasMeta) {
+      e.preventDefault();
+      const point = new Point();
+      this.app.renderer.events.mapPositionToPoint(point, e.clientX, e.clientY);
+      const zoomFactor = Math.pow(1.0015, -deltaY);
+      this.setZoomAt(this.world.scale.x * zoomFactor, point);
+      return;
+    }
+
+    if (deltaX !== 0 || deltaY !== 0) {
+      e.preventDefault();
+      this.panBy(-deltaX, -deltaY, 'wheel');
+    }
+  }
+
+  private normalizeWheel(e: WheelEvent) {
+    let dx = e.deltaX;
+    let dy = e.deltaY;
+    if (e.deltaMode === 1) {
+      dx *= 16;
+      dy *= 16;
+    } else if (e.deltaMode === 2) {
+      dx *= this.app.screen.width;
+      dy *= this.app.screen.height;
+    }
+    return { deltaX: dx, deltaY: dy };
   }
 
   private handleUndoRedoKeys(e: KeyboardEvent) {
@@ -227,7 +488,7 @@ export class CCDApp {
     }
   }
 
-  private setZoom(newScale: number) {
+  public setZoom(newScale: number) {
     const min = 0.1;
     const max = 5;
     const clamped = Math.max(min, Math.min(max, newScale));
@@ -247,16 +508,62 @@ export class CCDApp {
     // apply new scale
     this.world.scale.set(clamped);
 
-    // reposition so center stays fixed
-    this.world.position.set(center.x - worldX * clamped, center.y - worldY * clamped);
+    // reposition so center stays fixed (snap to integer pixels)
+    const nextX = Math.round(center.x - worldX * clamped);
+    const nextY = Math.round(center.y - worldY * clamped);
+    this.world.position.set(nextX, nextY);
 
+    this.dispatchOnHost(
+      new CustomEvent('viewport:changed', {
+        detail: {
+          x: nextX,
+          y: nextY,
+          zoom: this.world.scale.x,
+          source: 'zoom',
+        },
+      })
+    );
+  }
+
+  public setZoomAt(newScale: number, center: Point) {
+    const min = 0.1;
+    const max = 5;
+    const clamped = Math.max(min, Math.min(max, newScale));
+
+    const oldScale = this.world.scale.x;
+    if (clamped === oldScale) return;
+
+    const worldX = (center.x - this.world.position.x) / oldScale;
+    const worldY = (center.y - this.world.position.y) / oldScale;
+
+    this.world.scale.set(clamped);
+
+    const nextX = Math.round(center.x - worldX * clamped);
+    const nextY = Math.round(center.y - worldY * clamped);
+    this.world.position.set(nextX, nextY);
+
+    this.dispatchOnHost(
+      new CustomEvent('viewport:changed', {
+        detail: {
+          x: nextX,
+          y: nextY,
+          zoom: this.world.scale.x,
+          source: 'zoom',
+        },
+      })
+    );
+  }
+
+  public panBy(dx: number, dy: number, source: 'pan' | 'wheel' = 'pan') {
+    this.world.position.x += dx;
+    this.world.position.y += dy;
     this.dispatchOnHost(
       new CustomEvent('viewport:changed', {
         detail: {
           x: this.world.position.x,
           y: this.world.position.y,
           zoom: this.world.scale.x,
-          source: 'zoom',
+          source,
         },
       })
     );
@@ -276,9 +583,31 @@ export class CCDApp {
   }
 
   private async handlePaste(e: ClipboardEvent) {
-    const items = Array.from(e.clipboardData?.items ?? []);
+    if (e.defaultPrevented) return;
+    if (this.isEditingText()) return;
+
+    const clipboard = e.clipboardData;
+    const items = Array.from(clipboard?.items ?? []);
     const imageItems = items.filter((item) => item.type.startsWith('image/'));
-    if (!imageItems.length) return;
+    if (imageItems.length) {
+      e.preventDefault();
+      const point = this.getWorldPointFromClient(
+        this.app.screen.width / 2,
+        this.app.screen.height / 2,
+        true
+      );
+
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (file) {
+          await this.addImageFromSource(await this.toDataUrl(file), point);
+        }
+      }
+      return;
+    }
+
+    const text = clipboard?.getData('text/plain') ?? '';
+    if (!text.trim()) return;
 
     e.preventDefault();
     const point = this.getWorldPointFromClient(
@@ -286,28 +615,139 @@ export class CCDApp {
       this.app.screen.height / 2,
       true
     );
-
-    for (const item of imageItems) {
-      const file = item.getAsFile();
-      if (file) {
-        await this.addImageFromSource(await this.toDataUrl(file), point);
-      }
-    }
+    await this.addTextAt(text, point);
   }
 
-  private async addImageFromSource(source: string | File | Blob, point: Point) {
+  private async addTextAt(text: string, point: Point): Promise<AddedNodeResult> {
+    const node = new TextNode({
+      text,
+      x: point.x,
+      y: point.y,
+      style: {
+        fill: '#333333',
+      },
+    });
+    return this.commitAddedNode(node);
+  }
+
+  /**
+   * Public API for adding plain text as a text node.
+   * Default placement is the center of current viewport.
+   */
+  public async addText(
+    text: string,
+    options?: { x: number; y: number; space?: 'world' | 'screen' }
+  ): Promise<AddedNodeResult | null> {
+    const content = text ?? '';
+    if (!content.trim()) return null;
+
+    let point: Point;
+    if (options) {
+      point =
+        options.space === 'world'
+          ? new Point(options.x, options.y)
+          : this.getWorldPointFromClient(options.x, options.y, true);
+    } else {
+      point = this.getWorldPointFromClient(
+        this.app.screen.width / 2,
+        this.app.screen.height / 2,
+        true
+      );
+    }
+    return this.addTextAt(content, point);
+  }
+
+  /**
+   * Public API for adding an image from URL/data URL/File/Blob.
+   * Default placement is the center of current viewport.
+   */
+  public async addImage(
+    source: string | File | Blob,
+    options?: { x: number; y: number; space?: 'world' | 'screen' }
+  ): Promise<AddedNodeResult | null> {
+    let point: Point;
+    if (options) {
+      point =
+        options.space === 'world'
+          ? new Point(options.x, options.y)
+          : this.getWorldPointFromClient(options.x, options.y, true);
+    } else {
+      point = this.getWorldPointFromClient(
+        this.app.screen.width / 2,
+        this.app.screen.height / 2,
+        true
+      );
+    }
+    return this.addImageFromSource(source, point);
+  }
+
+  /**
+   * Public API for adding a frame node.
+   * Default placement is the center of current viewport.
+   */
+  public async addFrame(options: AddFrameOptions): Promise<AddedNodeResult | null> {
+    const width = Math.max(1, Math.round(options.width));
+    const height = Math.max(1, Math.round(options.height));
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+
+    const point =
+      options.x !== undefined && options.y !== undefined
+        ? options.space === 'world'
+          ? new Point(options.x, options.y)
+          : this.getWorldPointFromClient(options.x, options.y, true)
+        : this.getWorldPointFromClient(
+            this.app.screen.width / 2 - width / 2,
+            this.app.screen.height / 2 - height / 2,
+            true
+          );
+
+    const node = new FrameNode({
+      name: options.name,
+      width,
+      height,
+      x: Math.round(point.x),
+      y: Math.round(point.y),
+      backgroundColor: options.backgroundColor ?? '#ffffff',
+      clipContent: options.clipContent ?? true,
+      style: {
+        opacity: 1,
+      },
+    });
+    return this.commitAddedNode(node);
+  }
+
+  private async addImageFromSource(
+    source: string | File | Blob,
+    point: Point
+  ): Promise<AddedNodeResult | null> {
     try {
       const node = await ImageNode.fromSource({
         source,
         x: point.x,
         y: point.y,
       });
-      this.objectLayer.addChild(node);
-      this.dispatchLayerHierarchyChanged();
-      await this.history?.capture();
+      return this.commitAddedNode(node);
     } catch (err) {
       console.error('Failed to add image', err);
+      return null;
     }
+  }
+
+  private async commitAddedNode(node: BaseNode): Promise<AddedNodeResult> {
+    this.objectLayer.addChild(node);
+    this.dispatchLayerHierarchyChanged();
+    await this.history?.capture();
+
+    const inspectable = node.getInspectable();
+    return {
+      id: node.id,
+      type: node.type,
+      inspectable,
+      update: {
+        id: node.id,
+        props: Object.fromEntries(inspectable.props.map((prop) => [prop.key, prop.value])),
+      },
+    };
   }
 
   private getWorldPointFromClient(clientX: number, clientY: number, isScreenCoords = false): Point {
@@ -320,23 +760,26 @@ export class CCDApp {
     return this.world.toLocal(p);
   }
 
-  async exportRaster(options: {
-    type: 'png' | 'jpg';
-    scope: 'all' | 'selection';
-    quality?: number;
-    padding?: number;
-    background?: string;
-  }): Promise<string | null> {
-    const bounds = this.getExportBounds(options.scope);
-    if (!bounds) return null;
-
+  private async exportRasterNodes(
+    nodes: BaseNode[],
+    options: {
+      type: 'png' | 'jpg';
+      quality?: number;
+      padding?: number;
+      background?: string;
+      scale?: number;
+      boundsOverride?: { x: number; y: number; width: number; height: number };
+    }
+  ): Promise<string | null> {
+    if (!nodes.length) return null;
+    const bounds = options.boundsOverride ?? this.getBoundsFromNodes(nodes);
     const padding = options.padding ?? 0;
+    const scale = Math.max(0.01, Number.isFinite(Number(options.scale)) ? Number(options.scale) : 1);
     const width = Math.max(1, Math.ceil(bounds.width + padding * 2));
     const height = Math.max(1, Math.ceil(bounds.height + padding * 2));
 
-    const rt = RenderTexture.create({ width, height, resolution: 1 });
+    const rt = RenderTexture.create({ width, height, resolution: scale });
     const transform = new Matrix().translate(-bounds.x + padding, -bounds.y + padding);
-
     const clearColor =
       options.background !== undefined
         ? this.toColorNumber(options.background)
@@ -344,7 +787,8 @@ export class CCDApp {
           ? 0xffffff
           : new Color(0x000000).setAlpha(0);
 
-    const render = () =>
+    const restore = this.applySelectionVisibility(nodes);
+    try {
       this.app.renderer.render({
         container: this.objectLayer,
         target: rt,
@@ -352,63 +796,48 @@ export class CCDApp {
         clearColor,
         transform,
       });
-
-    if (options.scope === 'selection') {
-      const selected = this.pointerController?.getSelectedNodes() ?? [];
-      const restore = this.applySelectionVisibility(selected);
-      try {
-        render();
-      } finally {
-        restore();
-      }
-    } else {
-      render();
+    } finally {
+      restore();
     }
 
     const canvas = this.app.renderer.extract.canvas(rt);
-
     if (canvas && canvas.toDataURL) {
       const mime = options.type === 'jpg' ? 'image/jpeg' : 'image/png';
-
       const dataUrl = canvas.toDataURL(mime, options.quality ?? 0.92);
       rt.destroy(true);
       return dataUrl;
     }
-
     rt.destroy(true);
     return null;
   }
 
-  async exportSVG(options: {
-    scope: 'all' | 'selection';
-    padding?: number;
-    imageEmbed?: 'original' | 'display' | 'max';
-    imageMaxEdge?: number;
-    background?: string;
-  }): Promise<string | null> {
-    const bounds = this.getExportBounds(options.scope);
-    if (!bounds) return null;
-
+  private async exportSvgNodes(
+    nodes: BaseNode[],
+    options: {
+      padding?: number;
+      imageEmbed?: 'original' | 'display' | 'max';
+      imageMaxEdge?: number;
+      background?: string;
+      scale?: number;
+      boundsOverride?: { x: number; y: number; width: number; height: number };
+    }
+  ): Promise<string | null> {
+    if (!nodes.length) return null;
+    const bounds = options.boundsOverride ?? this.getBoundsFromNodes(nodes);
     const padding = options.padding ?? 0;
+    const scale = Math.max(0.01, Number.isFinite(Number(options.scale)) ? Number(options.scale) : 1);
     const width = Math.max(1, Math.ceil(bounds.width + padding * 2));
     const height = Math.max(1, Math.ceil(bounds.height + padding * 2));
+    const svgWidth = Math.max(1, Math.ceil(width * scale));
+    const svgHeight = Math.max(1, Math.ceil(height * scale));
     const offsetX = -bounds.x + padding;
     const offsetY = -bounds.y + padding;
-
-    const nodes =
-      options.scope === 'selection'
-        ? (this.pointerController?.getSelectedNodes() ?? [])
-        : this.getRootNodes();
-
     const invWorld = this.world.worldTransform.clone().invert();
     const parts: string[] = [];
 
     if (options.background) {
-      parts.push(
-        `<rect x="0" y="0" width="${width}" height="${height}" fill="${options.background}"/>`
-      );
+      parts.push(`<rect x="0" y="0" width="${width}" height="${height}" fill="${options.background}"/>`);
     }
-
     for (const node of nodes) {
       parts.push(
         await this.nodeToSvg(node, {
@@ -420,9 +849,8 @@ export class CCDApp {
         })
       );
     }
-
     return [
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${width} ${height}">`,
       `<g transform="translate(${offsetX} ${offsetY})">`,
       parts.join(''),
       `</g>`,
@@ -430,13 +858,16 @@ export class CCDApp {
     ].join('');
   }
 
-  private getExportBounds(scope: 'all' | 'selection') {
-    const nodes =
-      scope === 'selection'
-        ? (this.pointerController?.getSelectedNodes() ?? [])
-        : this.getRootNodes();
-    if (!nodes.length) return null;
-    return this.getBoundsFromNodes(nodes);
+  private getFrameBounds(frame: FrameNode) {
+    const tlGlobal = frame.toGlobal(new Point(0, 0));
+    const brGlobal = frame.toGlobal(new Point(frame.width, frame.height));
+    const tl = this.world.toLocal(tlGlobal);
+    const br = this.world.toLocal(brGlobal);
+    const x = Math.min(tl.x, br.x);
+    const y = Math.min(tl.y, br.y);
+    const width = Math.abs(br.x - tl.x);
+    const height = Math.abs(br.y - tl.y);
+    return { x, y, width, height };
   }
 
   private getBoundsFromNodes(nodes: BaseNode[]) {
@@ -461,10 +892,6 @@ export class CCDApp {
       width: maxX - minX,
       height: maxY - minY,
     };
-  }
-
-  private getRootNodes() {
-    return this.objectLayer.children.filter((c): c is BaseNode => c instanceof BaseNode);
   }
 
   private getAllBaseNodes(container: Container) {
@@ -528,6 +955,29 @@ export class CCDApp {
     return 0xffffff;
   }
 
+  private parseBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') {
+        return true;
+      }
+      if (
+        normalized === 'false' ||
+        normalized === '0' ||
+        normalized === 'no' ||
+        normalized === 'off' ||
+        normalized === '' ||
+        normalized === 'null' ||
+        normalized === 'undefined'
+      ) {
+        return false;
+      }
+    }
+    return Boolean(value);
+  }
+
   private async nodeToSvg(
     node: BaseNode,
     opts: {
@@ -537,7 +987,7 @@ export class CCDApp {
       imageEmbed: 'original' | 'display' | 'max';
       imageMaxEdge: number;
     }
-  ) {
+  ): Promise<string> {
     const m = node.worldTransform.clone();
     m.prepend(opts.invWorld);
     const transform = `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.tx} ${m.ty})`;
@@ -575,7 +1025,7 @@ export class CCDApp {
       case 'text': {
         const n = node as any;
         const fontSize = n.style.fontSize ?? 20;
-        const fontFamily = n.style.fontFamily ?? 'Arial';
+        const fontFamily = n.style.fontFamily ?? DEFAULT_FONT_FAMILY;
         const fontWeight = n.style.fontWeight ?? 'normal';
         const fontStyle = n.style.fontStyle ?? 'normal';
         const fill = n.style.fill ?? '#000000';
@@ -588,7 +1038,7 @@ export class CCDApp {
       }
       case 'group': {
         const n = node as any;
-        const children = n.children
+        const children: Array<Promise<string>> = n.children
           .filter((c: any) => c instanceof BaseNode)
           .map((c: BaseNode) =>
             this.nodeToSvg(c, {
@@ -600,6 +1050,34 @@ export class CCDApp {
             })
           );
         return (await Promise.all(children)).join('');
+      }
+      case 'frame': {
+        const n = node as FrameNode;
+        const children: Array<Promise<string>> = n.children
+          .filter((c): c is BaseNode => c instanceof BaseNode)
+          .map((c) =>
+            this.nodeToSvg(c, {
+              invWorld: opts.invWorld,
+              offsetX: opts.offsetX,
+              offsetY: opts.offsetY,
+              imageEmbed: opts.imageEmbed,
+              imageMaxEdge: opts.imageMaxEdge,
+            })
+          );
+        const childSvg: string = (await Promise.all(children)).join('');
+        const backgroundFill = n.backgroundColor ?? 'none';
+        const frameRect = `<rect x="0" y="0" width="${n.width}" height="${n.height}" fill="${backgroundFill}" transform="${transform}"${opacity}/>`;
+
+        if (!n.clipContent) {
+          return `${frameRect}${childSvg}`;
+        }
+
+        const clipId = `frame-clip-${n.id.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+        return [
+          `<defs><clipPath id="${clipId}"><rect x="0" y="0" width="${n.width}" height="${n.height}" transform="${transform}"/></clipPath></defs>`,
+          frameRect,
+          `<g clip-path="url(#${clipId})">${childSvg}</g>`,
+        ].join('');
       }
       default:
         return '';
@@ -707,23 +1185,30 @@ export class CCDApp {
 
   async undo() {
     await this.history?.undo();
+    this.ensureExportStoreConsistency();
     this.dispatchLayerHierarchyChanged();
     this.pointerController?.clearSelection();
   }
 
   async redo() {
     await this.history?.redo();
+    this.ensureExportStoreConsistency();
     this.dispatchLayerHierarchyChanged();
     this.pointerController?.clearSelection();
   }
 
   async exportJSON(): Promise<SceneDocument | null> {
+    this.ensureExportStoreConsistency();
     const doc = await this.history?.exportDocument();
     return doc ?? null;
   }
 
   async importJSON(doc: SceneDocument): Promise<void> {
-    await this.history?.importDocument(doc);
+    if (this.history) {
+      await this.history.importDocument(doc);
+    } else {
+      this.importExportPresetStore(doc);
+    }
     this.dispatchLayerHierarchyChanged();
     this.pointerController?.clearSelection();
     this.world.scale.set(1);
@@ -740,12 +1225,271 @@ export class CCDApp {
     );
   }
 
+  getExportSettingIds(nodeId: string): string[] {
+    const node = this.findNodeById(this.objectLayer, nodeId);
+    if (!node) return [];
+    return [...this.getLinkedPresetIds(nodeId)];
+  }
+
+  getAllExportSettings(): ExportSettingRecord[] {
+    return Object.entries(this.exportPresetStore.presets).map(([id, preset]) => ({
+      id,
+      preset: { ...preset },
+      linkedNodeIds: this.getExportPresetUsage(id),
+    }));
+  }
+
+  async addExportSetting(
+    nodeId: string,
+    preset: Omit<Partial<NodeExportPreset>, 'id'> & { id?: string },
+    options: ExportPresetEditOptions = {}
+  ): Promise<NodeExportPreset | null> {
+    const node = this.findNodeById(this.objectLayer, nodeId);
+    if (!node) return null;
+    this.ensureNodePresetLinkList(nodeId);
+
+    const requestedId =
+      typeof preset.id === 'string' && preset.id.trim()
+        ? preset.id.trim()
+        : this.createExportPresetId('preset');
+    const presetId = this.ensureUniquePresetId(requestedId, 'preset');
+    const normalized = normalizeNodeExportPreset({ ...preset, id: presetId });
+    this.exportPresetStore.presets[presetId] = normalized;
+
+    const linked = this.getLinkedPresetIds(nodeId);
+    if (!linked.includes(presetId)) {
+      this.exportPresetStore.nodePresetIds[nodeId] = [...linked, presetId];
+    }
+    if (options.recordHistory !== false) {
+      await this.history?.capture();
+    }
+    return { ...normalized };
+  }
+
+  getExportSettingById(presetId: string): NodeExportPreset | null {
+    const preset = this.exportPresetStore.presets[presetId];
+    return preset ? { ...preset } : null;
+  }
+
+  async editExportSetting(
+    presetId: string,
+    patch: Partial<NodeExportPreset>,
+    options: ExportPresetEditOptions = {}
+  ): Promise<NodeExportPreset | null> {
+    const current = this.exportPresetStore.presets[presetId];
+    if (!current) return null;
+    const normalized = normalizeNodeExportPreset({ ...current, ...patch, id: presetId });
+    this.exportPresetStore.presets[presetId] = normalized;
+    if (options.recordHistory !== false) {
+      await this.history?.capture();
+    }
+    return { ...normalized };
+  }
+
+  async deleteExportSetting(
+    presetId: string,
+    options: ExportPresetEditOptions = {}
+  ): Promise<boolean> {
+    if (!this.exportPresetStore.presets[presetId]) return false;
+    Object.entries(this.exportPresetStore.nodePresetIds).forEach(([nodeId, presetIds]) => {
+      const filtered = presetIds.filter((id) => id !== presetId);
+      if (filtered.length) {
+        this.exportPresetStore.nodePresetIds[nodeId] = filtered;
+      } else {
+        delete this.exportPresetStore.nodePresetIds[nodeId];
+      }
+    });
+    delete this.exportPresetStore.presets[presetId];
+    this.ensureExportStoreConsistency();
+    if (options.recordHistory !== false) {
+      await this.history?.capture();
+    }
+    return true;
+  }
+
+  async exportNodeByPreset(nodeId: string, presetId: string): Promise<NodeExportAsset | null> {
+    const node = this.findNodeById(this.objectLayer, nodeId);
+    if (!node) return null;
+    const linkedIds = this.getLinkedPresetIds(nodeId);
+    if (!linkedIds.includes(presetId)) return null;
+    const preset = this.exportPresetStore.presets[presetId];
+    if (!preset) return null;
+
+    const normalizedPreset = normalizeNodeExportPreset(preset);
+    const isFrame = node instanceof FrameNode;
+    const bounds = isFrame ? this.getFrameBounds(node) : this.getBoundsFromNodes([node]);
+
+    const baseName = sanitizeExportFileBaseName(node.name || node.id || 'export');
+    const extension = normalizedPreset.format;
+    const filename = `${baseName}${normalizedPreset.suffix || ''}.${extension}`;
+
+    let frameRestore: (() => void) | null = null;
+    if (isFrame && normalizedPreset.backgroundMode !== 'auto') {
+      const frame = node as FrameNode;
+      const previous = frame.backgroundColor;
+      if (normalizedPreset.backgroundMode === 'transparent') {
+        frame.setBackgroundColor(null);
+      } else {
+        frame.setBackgroundColor(normalizedPreset.backgroundColor ?? '#ffffff');
+      }
+      frameRestore = () => frame.setBackgroundColor(previous);
+    }
+
+    try {
+      if (normalizedPreset.format === 'svg') {
+        const svg = await this.exportSvgNodes([node], {
+          padding: normalizedPreset.padding,
+          imageEmbed: normalizedPreset.imageEmbed,
+          imageMaxEdge: normalizedPreset.imageMaxEdge,
+          background:
+            normalizedPreset.backgroundMode === 'solid'
+              ? normalizedPreset.backgroundColor ?? '#ffffff'
+              : undefined,
+          scale: normalizedPreset.scale,
+          boundsOverride: bounds,
+        });
+        if (!svg) return null;
+        return {
+          nodeId: node.id,
+          presetId: normalizedPreset.id,
+          format: 'svg',
+          filename,
+          mimeType: 'image/svg+xml',
+          content: svg,
+          contentType: 'text',
+        };
+      }
+
+      const background =
+        normalizedPreset.backgroundMode === 'solid'
+          ? normalizedPreset.backgroundColor ?? '#ffffff'
+          : undefined;
+      const raster = await this.exportRasterNodes([node], {
+        type: normalizedPreset.format,
+        quality: normalizedPreset.quality,
+        padding: normalizedPreset.padding,
+        background,
+        scale: normalizedPreset.scale,
+        boundsOverride: bounds,
+      });
+      if (!raster) return null;
+      return {
+        nodeId: node.id,
+        presetId: normalizedPreset.id,
+        format: normalizedPreset.format,
+        filename,
+        mimeType: normalizedPreset.format === 'jpg' ? 'image/jpeg' : 'image/png',
+        content: raster,
+        contentType: 'dataUrl',
+      };
+    } finally {
+      frameRestore?.();
+    }
+  }
+
+  async exportNodesByPreset(
+    requests: Array<{ nodeId: string; presetId: string }>
+  ): Promise<NodeExportAsset[]> {
+    const results: NodeExportAsset[] = [];
+    for (const request of requests) {
+      const asset = await this.exportNodeByPreset(request.nodeId, request.presetId);
+      if (asset) {
+        results.push(asset);
+      }
+    }
+    return results;
+  }
+
+  private snapshotExportPresetStore(): ExportPresetStore {
+    const presets: Record<string, NodeExportPreset> = {};
+    Object.entries(this.exportPresetStore.presets).forEach(([presetId, preset]) => {
+      presets[presetId] = { ...preset };
+    });
+    const nodePresetIds: Record<string, string[]> = {};
+    Object.entries(this.exportPresetStore.nodePresetIds).forEach(([nodeId, presetIds]) => {
+      nodePresetIds[nodeId] = [...presetIds];
+    });
+    return { presets, nodePresetIds };
+  }
+
+  private importExportPresetStore(doc: SceneDocument): void {
+    this.exportPresetStore = normalizeExportPresetStore((doc as any).exportStore);
+    this.ensureExportStoreConsistency();
+  }
+
+  private ensureExportStoreConsistency(): void {
+    const existingNodeIds = new Set(this.getAllBaseNodes(this.objectLayer).map((node) => node.id));
+    const validNodePresetIds: Record<string, string[]> = {};
+    Object.entries(this.exportPresetStore.nodePresetIds).forEach(([nodeId, presetIds]) => {
+      if (!existingNodeIds.has(nodeId)) return;
+      const validIds = presetIds.filter((presetId, index, arr) => {
+        return arr.indexOf(presetId) === index && Boolean(this.exportPresetStore.presets[presetId]);
+      });
+      if (validIds.length) {
+        validNodePresetIds[nodeId] = validIds;
+      }
+    });
+    this.exportPresetStore.nodePresetIds = validNodePresetIds;
+    this.pruneOrphanExportPresets();
+  }
+
+  private pruneOrphanExportPresets(): void {
+    const used = new Set<string>();
+    Object.values(this.exportPresetStore.nodePresetIds).forEach((ids) => {
+      ids.forEach((id) => used.add(id));
+    });
+    Object.keys(this.exportPresetStore.presets).forEach((presetId) => {
+      if (!used.has(presetId)) {
+        delete this.exportPresetStore.presets[presetId];
+      }
+    });
+  }
+
+  private createExportPresetId(seed = 'preset'): string {
+    const sanitized = sanitizeExportFileBaseName(seed).toLowerCase().replace(/[.]/g, '_') || 'preset';
+    return this.ensureUniquePresetId(`exp_${sanitized}`, sanitized);
+  }
+
+  private ensureUniquePresetId(
+    desiredId: string,
+    fallbackSeed: string,
+    against?: Record<string, NodeExportPreset>
+  ): string {
+    const target = against ?? this.exportPresetStore.presets;
+    const normalized = (desiredId || '').trim();
+    if (normalized && !target[normalized]) return normalized;
+    const base = sanitizeExportFileBaseName(fallbackSeed).toLowerCase().replace(/[.]/g, '_') || 'preset';
+    let candidate = `exp_${base}_${crypto.randomUUID().slice(0, 8)}`;
+    while (target[candidate]) {
+      candidate = `exp_${base}_${crypto.randomUUID().slice(0, 8)}`;
+    }
+    return candidate;
+  }
+
+  private getLinkedPresetIds(nodeId: string): string[] {
+    const list = this.exportPresetStore.nodePresetIds[nodeId] ?? [];
+    return list.filter((presetId) => Boolean(this.exportPresetStore.presets[presetId]));
+  }
+
+  private ensureNodePresetLinkList(nodeId: string): void {
+    if (!this.exportPresetStore.nodePresetIds[nodeId]) {
+      this.exportPresetStore.nodePresetIds[nodeId] = [];
+    }
+  }
+
+  getExportPresetUsage(presetId: string): string[] {
+    return Object.entries(this.exportPresetStore.nodePresetIds)
+      .filter(([, ids]) => ids.includes(presetId))
+      .map(([nodeId]) => nodeId);
+  }
+
   hasDocumentContent(): boolean {
     return this.history?.hasContent() ?? false;
   }
 
   async clearDocument(): Promise<void> {
     await this.history?.clearDocument();
+    this.exportPresetStore = { ...DEFAULT_EXPORT_PRESET_STORE };
     this.dispatchLayerHierarchyChanged();
     this.pointerController?.clearSelection();
   }
@@ -782,9 +1526,109 @@ export class CCDApp {
   dispatchLayerHierarchyChanged() {
     const hierarchy = LayerHierarchy.getHierarchy(this.objectLayer);
     const event = new CustomEvent('layer:changed', {
-      detail: { hierarchy, selectedIds: [] },
+      detail: { hierarchy },
     });
     this.dispatchOnHost(event);
+  }
+
+  public selectNodeById(id: string | null) {
+    const node = id ? this.findNodeById(this.objectLayer, id) : null;
+    this.pointerController?.selectNode(node);
+  }
+
+  public selectNodesById(ids: string[]) {
+    const nodes = ids
+      .map((id) => this.findNodeById(this.objectLayer, id))
+      .filter((n): n is BaseNode => n !== null);
+    this.pointerController?.selectNodes(nodes);
+  }
+
+  public setHoverById(id: string | null) {
+    const node = id ? this.findNodeById(this.objectLayer, id) : null;
+    this.pointerController?.setHoverNode(node);
+  }
+
+  public getFlatLayers(options: GetFlatLayersOptions = {}): FlatLayerItem[] {
+    const { parentId = null, recursive = true, topFirst = true } = options;
+    const parent = this.resolveLayerParent(parentId);
+    if (!parent) return [];
+
+    const layers: FlatLayerItem[] = [];
+    this.collectFlatLayers(parent, parentId, 0, layers, recursive, topFirst);
+    return layers;
+  }
+
+  public canMoveLayer(
+    sourceId: string,
+    targetId: string,
+    position: LayerMovePosition
+  ): LayerMoveValidation {
+    return this.validateLayerMove([sourceId], targetId, position);
+  }
+
+  public canMoveLayers(
+    sourceIds: string[],
+    targetId: string,
+    position: LayerMovePosition
+  ): LayerMoveValidation {
+    return this.validateLayerMove(sourceIds, targetId, position);
+  }
+
+  public async moveLayer(
+    sourceId: string,
+    targetId: string,
+    position: LayerMovePosition,
+    options: { recordHistory?: boolean } = {}
+  ): Promise<boolean> {
+    return this.moveLayers([sourceId], targetId, position, options);
+  }
+
+  public async moveLayers(
+    sourceIds: string[],
+    targetId: string,
+    position: LayerMovePosition,
+    options: { recordHistory?: boolean } = {}
+  ): Promise<boolean> {
+    const validation = this.validateLayerMove(sourceIds, targetId, position);
+    if (!validation.ok) return false;
+
+    const sourceNodes = this.getMoveSourceNodes(sourceIds);
+    const targetNode = this.findNodeById(this.objectLayer, targetId);
+    if (!targetNode) return false;
+
+    const destinationParent = position === 'inside' ? targetNode : (targetNode.parent as Container | null);
+    if (!destinationParent) return false;
+
+    const insertionIndex = this.resolveInsertionIndex(sourceNodes, destinationParent, targetNode, position);
+    const orderedNodes = sourceNodes
+      .slice()
+      .sort((a, b) => this.compareNodeStackOrder(a, b));
+    const transforms = new Map<string, { origin: Point; xAxis: Point; yAxis: Point }>();
+
+    orderedNodes.forEach((node) => {
+      transforms.set(node.id, {
+        origin: node.toGlobal(new Point(0, 0)),
+        xAxis: node.toGlobal(new Point(1, 0)),
+        yAxis: node.toGlobal(new Point(0, 1)),
+      });
+      node.parent?.removeChild(node);
+    });
+
+    let nextIndex = Math.max(0, Math.min(insertionIndex, destinationParent.children.length));
+    orderedNodes.forEach((node) => {
+      destinationParent.addChildAt(node, nextIndex);
+      const transform = transforms.get(node.id);
+      if (transform) {
+        this.applyWorldTransformToParent(node, destinationParent, transform);
+      }
+      nextIndex += 1;
+    });
+
+    this.dispatchLayerHierarchyChanged();
+    if (options.recordHistory !== false) {
+      await this.history?.capture();
+    }
+    return true;
   }
 
   /**
@@ -799,16 +1643,58 @@ export class CCDApp {
       const node = this.findNodeById(this.objectLayer, id);
       if (!node) return;
 
+      if (node.type === 'star') {
+        const n: any = node as any;
+        const hasPoints = Object.prototype.hasOwnProperty.call(props, 'points');
+        const hasInner = Object.prototype.hasOwnProperty.call(props, 'innerRadius');
+        const hasOuter = Object.prototype.hasOwnProperty.call(props, 'outerRadius');
+        const hasRatio = Object.prototype.hasOwnProperty.call(props, 'innerRatio');
+        if (hasPoints || hasInner || hasOuter || hasRatio) {
+          const prevRatio = n.outerRadius > 0 ? n.innerRadius / n.outerRadius : 0.5;
+          if (hasPoints) n.points = Number((props as any).points);
+          if (hasOuter) {
+            const nextOuter = Number((props as any).outerRadius);
+            n.outerRadius = nextOuter;
+            node.width = nextOuter * 2;
+            node.height = nextOuter * 2;
+            if (!hasInner && !hasRatio) {
+              n.innerRadius = nextOuter * prevRatio;
+            }
+          }
+          if (hasInner) {
+            n.innerRadius = Number((props as any).innerRadius);
+          }
+          if (hasRatio) {
+            const raw = Number((props as any).innerRatio);
+            const ratio = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : prevRatio;
+            n.innerRadius = n.outerRadius * ratio;
+          }
+          n.redraw?.();
+        }
+      }
+
       Object.entries(props).forEach(([key, value]) => {
+        if (node.locked && key !== 'locked' && key !== 'visible') {
+          return;
+        }
+        if (
+          node.type === 'star' &&
+          (key === 'points' ||
+            key === 'innerRadius' ||
+            key === 'outerRadius' ||
+            key === 'innerRatio')
+        ) {
+          return;
+        }
         switch (key) {
           case 'name':
             node.name = value as string;
             break;
           case 'x':
-            node.position.x = Number(value);
+            this.setNodeGlobalPosition(node, Number(value), undefined);
             break;
           case 'y':
-            node.position.y = Number(value);
+            this.setNodeGlobalPosition(node, undefined, Number(value));
             break;
           case 'width':
             node.width = Number(value);
@@ -823,13 +1709,15 @@ export class CCDApp {
             node.scale.y = Number(value);
             break;
           case 'rotation':
-            node.rotation = Number(value);
+            if (node.type !== 'frame') {
+              node.rotation = Number(value);
+            }
             break;
           case 'visible':
-            node.visible = Boolean(value);
+            node.visible = this.parseBoolean(value);
             break;
           case 'locked':
-            node.locked = Boolean(value);
+            node.locked = this.parseBoolean(value);
             break;
           case 'fill':
           case 'stroke':
@@ -864,18 +1752,17 @@ export class CCDApp {
               (node as any).setText(value as string);
             }
             break;
-          case 'points':
-          case 'innerRadius':
-          case 'outerRadius':
-            if (node.type === 'star') {
-              if (key === 'points') (node as any).points = Number(value);
-              if (key === 'innerRadius') (node as any).innerRadius = Number(value);
-              if (key === 'outerRadius') {
-                (node as any).outerRadius = Number(value);
-                node.width = Number(value) * 2;
-                node.height = Number(value) * 2;
-              }
-              (node as any).redraw?.();
+          case 'background':
+          case 'backgroundColor':
+            if (node.type === 'frame') {
+              (node as FrameNode).setBackgroundColor(
+                value === null || value === '' ? null : String(value)
+              );
+            }
+            break;
+          case 'clipContent':
+            if (node.type === 'frame') {
+              (node as FrameNode).setClipContent(this.parseBoolean(value));
             }
             break;
           case 'startX':
@@ -883,11 +1770,28 @@ export class CCDApp {
           case 'endX':
           case 'endY':
             if (node.type === 'line') {
-              // values are absolute; store relative to node position
-              if (key === 'startX') (node as any).startX = Number(value) - node.position.x;
-              if (key === 'startY') (node as any).startY = Number(value) - node.position.y;
-              if (key === 'endX') (node as any).endX = Number(value) - node.position.x;
-              if (key === 'endY') (node as any).endY = Number(value) - node.position.y;
+              const currentStart = this.getLinePointGlobal(node as any, 'start');
+              const currentEnd = this.getLinePointGlobal(node as any, 'end');
+              const targetStart = { ...currentStart };
+              const targetEnd = { ...currentEnd };
+              if (key === 'startX') targetStart.x = Number(value);
+              if (key === 'startY') targetStart.y = Number(value);
+              if (key === 'endX') targetEnd.x = Number(value);
+              if (key === 'endY') targetEnd.y = Number(value);
+
+              const parent = (node as any).parent as Container | null;
+              const startLocal = parent
+                ? parent.toLocal(new Point(targetStart.x, targetStart.y))
+                : new Point(targetStart.x, targetStart.y);
+              const endLocal = parent
+                ? parent.toLocal(new Point(targetEnd.x, targetEnd.y))
+                : new Point(targetEnd.x, targetEnd.y);
+
+              (node as any).position.set(startLocal.x, startLocal.y);
+              (node as any).startX = 0;
+              (node as any).startY = 0;
+              (node as any).endX = endLocal.x - startLocal.x;
+              (node as any).endY = endLocal.y - startLocal.y;
               (node as any).refresh?.();
               (node as any).redraw?.();
             }
@@ -899,6 +1803,9 @@ export class CCDApp {
     });
 
     if (touchedNodes.length) {
+      if (touchedNodes.some((node) => node.locked || !node.visible)) {
+        this.pointerController?.clearSelection();
+      }
       // Let listeners refresh panels
       const nodes: InspectableNode[] = touchedNodes
         .map((n) =>
@@ -914,13 +1821,250 @@ export class CCDApp {
   }
 
   private applyStyle(node: BaseNode, key: string, value: any) {
-    const styleUpdate: any = { [key]: value };
+    if (node.type === 'frame') {
+      const frame = node as FrameNode;
+      if (key === 'fill') {
+        frame.setBackgroundColor(value === null || value === '' ? null : String(value));
+        return;
+      }
+      if (key === 'stroke') {
+        return;
+      }
+      if (key === 'strokeWidth') {
+        return;
+      }
+      if (key === 'opacity') {
+        frame.setStyle({ opacity: Number(value) });
+        return;
+      }
+    }
+
+    const normalizedValue =
+      key === 'strokeWidth'
+        ? Math.max(0, Math.round(Number.isFinite(Number(value)) ? Number(value) : 0))
+        : key === 'fontFamily'
+          ? normalizeFontFamily(value)
+        : key === 'fontStyle'
+          ? normalizeFontStyle(value)
+          : key === 'fontWeight'
+            ? normalizeFontWeight(value)
+        : value;
+    const styleUpdate: any = { [key]: normalizedValue };
     if ('setStyle' in node && typeof (node as any).setStyle === 'function') {
       (node as any).setStyle(styleUpdate);
     } else {
       node.style = { ...node.style, ...styleUpdate };
       (node as any).redraw?.();
     }
+  }
+
+  private setNodeGlobalPosition(node: BaseNode, x?: number, y?: number) {
+    const currentGlobal = this.getNodeGlobalPosition(node);
+    const targetX = x ?? currentGlobal.x;
+    const targetY = y ?? currentGlobal.y;
+    const local = node.parent
+      ? node.parent.toLocal(new Point(targetX, targetY))
+      : new Point(targetX, targetY);
+    node.position.set(local.x, local.y);
+  }
+
+  private getNodeGlobalPosition(node: BaseNode): Point {
+    if (!node.parent) return new Point(node.position.x, node.position.y);
+    return node.parent.toGlobal(new Point(node.position.x, node.position.y));
+  }
+
+  private getLinePointGlobal(
+    node: { parent?: Container; position: Point; startX: number; startY: number; endX: number; endY: number },
+    which: 'start' | 'end'
+  ): Point {
+    const local = new Point(
+      node.position.x + (which === 'start' ? node.startX : node.endX),
+      node.position.y + (which === 'start' ? node.startY : node.endY)
+    );
+    return node.parent ? node.parent.toGlobal(local) : local;
+  }
+
+  private resolveLayerParent(parentId: string | null): Container | null {
+    if (parentId === null) return this.objectLayer;
+    const node = this.findNodeById(this.objectLayer, parentId);
+    if (!node || !(node instanceof GroupNode || node instanceof FrameNode)) return null;
+    return node;
+  }
+
+  private collectFlatLayers(
+    parent: Container,
+    parentId: string | null,
+    depth: number,
+    output: FlatLayerItem[],
+    recursive: boolean,
+    topFirst: boolean
+  ) {
+    const nodes = parent.children.filter((child): child is BaseNode => child instanceof BaseNode);
+    const ordered = topFirst ? nodes.slice().reverse() : nodes.slice();
+
+    ordered.forEach((node) => {
+      output.push({
+        id: node.id,
+        type: node.type,
+        name: node.name,
+        visible: node.visible,
+        locked: node.locked,
+        parentId,
+        depth,
+        zIndex: parent.getChildIndex(node),
+        isGroup: node instanceof GroupNode,
+        childCount: node.children.filter((child): child is BaseNode => child instanceof BaseNode).length,
+      });
+
+      if (recursive && node instanceof GroupNode) {
+        this.collectFlatLayers(node, node.id, depth + 1, output, recursive, topFirst);
+      }
+    });
+  }
+
+  private validateLayerMove(
+    sourceIds: string[],
+    targetId: string,
+    position: LayerMovePosition
+  ): LayerMoveValidation {
+    if (!sourceIds.length) return { ok: false, reason: 'No source ids provided.' };
+    const uniqueIds = Array.from(new Set(sourceIds));
+    if (uniqueIds.includes(targetId)) {
+      return { ok: false, reason: 'Source and target cannot be the same node.' };
+    }
+
+    const resolvedNodes = uniqueIds.map((id) => this.findNodeById(this.objectLayer, id));
+    if (resolvedNodes.some((node) => !node)) {
+      return { ok: false, reason: 'Some source ids do not exist.' };
+    }
+
+    const sourceNodes = this.getMoveSourceNodes(uniqueIds);
+    if (!sourceNodes.length) {
+      return { ok: false, reason: 'No valid source nodes found.' };
+    }
+
+    const targetNode = this.findNodeById(this.objectLayer, targetId);
+    if (!targetNode) return { ok: false, reason: 'Target node not found.' };
+
+    const destinationParent = position === 'inside' ? targetNode : (targetNode.parent as Container | null);
+    if (!destinationParent) return { ok: false, reason: 'Target has no destination parent.' };
+    if (position === 'inside' && !(targetNode instanceof GroupNode || targetNode instanceof FrameNode)) {
+      return { ok: false, reason: 'Only group or frame nodes can accept inside drops.' };
+    }
+    if (
+      destinationParent instanceof BaseNode &&
+      destinationParent.locked
+    ) {
+      return { ok: false, reason: 'Destination parent is locked.' };
+    }
+    if (sourceNodes.some((node) => node.locked)) {
+      return { ok: false, reason: 'Locked nodes cannot be moved.' };
+    }
+    if (
+      sourceNodes.some((node) => node instanceof FrameNode) &&
+      destinationParent !== this.objectLayer
+    ) {
+      return { ok: false, reason: 'Frames must stay at the root level.' };
+    }
+    if (sourceNodes.some((node) => this.isAncestorNode(node, destinationParent))) {
+      return { ok: false, reason: 'Cannot move a node into its own descendant.' };
+    }
+    return { ok: true };
+  }
+
+  private resolveInsertionIndex(
+    sourceNodes: BaseNode[],
+    destinationParent: Container,
+    targetNode: BaseNode,
+    position: LayerMovePosition
+  ): number {
+    if (position === 'inside') {
+      return destinationParent.children.length;
+    }
+
+    let index = destinationParent.getChildIndex(targetNode);
+    if (position === 'after') {
+      index += 1;
+    }
+
+    sourceNodes.forEach((node) => {
+      if (node.parent !== destinationParent) return;
+      const childIndex = destinationParent.getChildIndex(node);
+      if (childIndex < index) {
+        index -= 1;
+      }
+    });
+    return index;
+  }
+
+  private getMoveSourceNodes(sourceIds: string[]): BaseNode[] {
+    const uniqueIds = Array.from(new Set(sourceIds));
+    const nodes = uniqueIds
+      .map((id) => this.findNodeById(this.objectLayer, id))
+      .filter((node): node is BaseNode => node !== null);
+    const nodeSet = new Set(nodes);
+    return nodes.filter((node) => !this.hasAncestorInSet(node, nodeSet));
+  }
+
+  private hasAncestorInSet(node: BaseNode, set: Set<BaseNode>): boolean {
+    let parent = node.parent;
+    while (parent) {
+      if (parent instanceof BaseNode && set.has(parent)) return true;
+      if (parent === this.objectLayer) break;
+      parent = parent.parent;
+    }
+    return false;
+  }
+
+  private isAncestorNode(ancestor: BaseNode, node: Container | null): boolean {
+    let current: Container | null = node;
+    while (current) {
+      if (current === ancestor) return true;
+      if (current === this.objectLayer) break;
+      current = current.parent;
+    }
+    return false;
+  }
+
+  private compareNodeStackOrder(a: BaseNode, b: BaseNode): number {
+    const pathA = this.getNodePathIndices(a);
+    const pathB = this.getNodePathIndices(b);
+    const len = Math.min(pathA.length, pathB.length);
+    for (let i = 0; i < len; i += 1) {
+      if (pathA[i] !== pathB[i]) return pathA[i] - pathB[i];
+    }
+    return pathA.length - pathB.length;
+  }
+
+  private getNodePathIndices(node: BaseNode): number[] {
+    const indices: number[] = [];
+    let current: Container | null = node;
+    while (current && current !== this.objectLayer) {
+      const parent = current.parent as Container | null;
+      if (!parent) break;
+      indices.push(parent.getChildIndex(current));
+      current = parent;
+    }
+    return indices.reverse();
+  }
+
+  private applyWorldTransformToParent(
+    node: BaseNode,
+    parent: Container,
+    transform: { origin: Point; xAxis: Point; yAxis: Point }
+  ) {
+    const origin = parent.toLocal(transform.origin);
+    const xAxis = parent.toLocal(transform.xAxis);
+    const yAxis = parent.toLocal(transform.yAxis);
+    const xVector = new Point(xAxis.x - origin.x, xAxis.y - origin.y);
+    const yVector = new Point(yAxis.x - origin.x, yAxis.y - origin.y);
+    const scaleX = Math.hypot(xVector.x, xVector.y) || 1;
+    const scaleY = Math.hypot(yVector.x, yVector.y) || 1;
+    const rotation = Math.atan2(xVector.y, xVector.x);
+
+    node.position.copyFrom(origin);
+    node.rotation = rotation;
+    node.scale.set(scaleX, scaleY);
   }
 
   private findNodeById(container: Container, id: string): BaseNode | null {
@@ -935,19 +2079,72 @@ export class CCDApp {
   }
 
   private dispatchOnHost(event: Event) {
-    if (this.host) {
-      this.host.dispatchEvent(event);
-    } else {
-      window.dispatchEvent(event);
-    }
+    this.dispatchEvent(event);
   }
 
   destroy() {
+    this.app.ticker.remove(this.syncStageHitArea);
+    this.app.ticker.remove(this.updateRuler);
+    this.app.ticker.remove(this.updateZoomLabel);
+
+    window.removeEventListener('keydown', this.onZoomKeyDown);
+    window.removeEventListener('keydown', this.onUndoRedoKeyDown);
+    window.removeEventListener('keydown', this.onToolKeyDown);
+    if (this.pointerControllerKeyDownHandler) {
+      window.removeEventListener('keydown', this.pointerControllerKeyDownHandler);
+    }
+    if (this.pointerControllerKeyUpHandler) {
+      window.removeEventListener('keyup', this.pointerControllerKeyUpHandler);
+    }
+
+    this.app.canvas.removeEventListener('wheel', this.onCanvasWheel);
+    this.host?.removeEventListener('dragover', this.onHostDragOver);
+    this.host?.removeEventListener('drop', this.onHostDrop);
+    this.host?.removeEventListener('paste', this.onHostPaste);
+    window.removeEventListener('paste', this.onWindowPaste);
+    this.host?.removeEventListener('pointerdown', this.onHostPointerDown);
+    this.host?.removeEventListener('pointermove', this.onHostPointerMove);
+    this.host?.removeEventListener('pointerup', this.onHostPointerUp);
+    this.host?.removeEventListener('dblclick', this.onHostDoubleClick);
+    this.host?.removeEventListener('pointercancel', this.onHostPointerCancel);
+
+    if (this.pointerController) {
+      this.pointerController.removeEventListener(
+        'shape:created',
+        this.onPointerControllerShapeCreated
+      );
+      this.pointerController.removeEventListener(
+        'viewport:changed',
+        this.onPointerControllerViewportChanged
+      );
+      this.pointerController.removeEventListener(
+        'hover:changed',
+        this.onPointerControllerHoverChanged
+      );
+    }
+
+    this.pointerControllerKeyDownHandler = undefined;
+    this.pointerControllerKeyUpHandler = undefined;
+    this.pointerController = undefined;
+    this.ruler = undefined;
+    this.zoomLabel = undefined;
+    this.history = undefined;
+    this.host = undefined;
+    this.isInitialized = false;
     this.app.destroy(true);
   }
 
   getLayerHierarchy() {
     return LayerHierarchy.getHierarchy(this.objectLayer);
+  }
+
+  getFrames(): FrameNode[] {
+    return this.getAllBaseNodes(this.objectLayer).filter((node): node is FrameNode => node instanceof FrameNode);
+  }
+
+  getFrameById(id: string): FrameNode | null {
+    const node = this.findNodeById(this.objectLayer, id);
+    return node instanceof FrameNode ? node : null;
   }
 
   getPixiApp() {
