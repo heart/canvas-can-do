@@ -391,15 +391,28 @@ export class SelectionManager {
     this.objectSnapEnabled = enabled;
   }
 
+  private getSelectionParent(): Container | null {
+    const first = Array.from(this.selectedNodes)[0];
+    return (first?.parent as Container | null) ?? null;
+  }
+
   select(node: BaseNode | null) {
     if (!this.isMultiSelect) {
       this.selectedNodes.clear();
     }
 
     if (node && node.visible && !node.locked) {
-      if (this.isMultiSelect && this.selectedNodes.has(node)) {
-        // Toggle off
-        this.selectedNodes.delete(node);
+      if (this.isMultiSelect) {
+        const selectionParent = this.getSelectionParent();
+        if (selectionParent && node.parent !== selectionParent) {
+          // Multi-select is constrained to one container. Crossing container resets selection.
+          this.selectedNodes.clear();
+          this.selectedNodes.add(node);
+        } else if (this.selectedNodes.has(node)) {
+          this.selectedNodes.delete(node);
+        } else {
+          this.selectedNodes.add(node);
+        }
       } else {
         this.selectedNodes.add(node);
       }
@@ -411,9 +424,17 @@ export class SelectionManager {
 
   selectMany(nodes: BaseNode[]) {
     this.selectedNodes.clear();
-    nodes.forEach((n) => {
-      if (n && n.visible && !n.locked) this.selectedNodes.add(n);
-    });
+    const selectable = nodes.filter((n) => n && n.visible && !n.locked);
+    if (selectable.length) {
+      const anchorParent = selectable[0].parent;
+      const sameParent = selectable.filter((n) => n.parent === anchorParent);
+      if (sameParent.length !== selectable.length) {
+        // Multi-select is constrained to one container. Crossing container keeps only the new anchor node.
+        this.selectedNodes.add(sameParent[0]);
+      } else {
+        sameParent.forEach((n) => this.selectedNodes.add(n));
+      }
+    }
     this.updateSelectionVisuals();
     this.dispatchSelectionChanged();
   }

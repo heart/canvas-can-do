@@ -19,10 +19,9 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   </div>
   <div class="export-panel">
     <label>
-      Scope
-      <select id="export-scope">
-        <option value="all">All Objects</option>
-        <option value="selection">Selection</option>
+      Frame
+      <select id="export-frame">
+        <option value="">First Frame</option>
       </select>
     </label>
     <label>
@@ -106,7 +105,7 @@ editor?.addEventListener('viewport:changed', ((
 }) as EventListener);
 
 const exportBtn = document.getElementById('export-btn');
-const exportScope = document.getElementById('export-scope') as HTMLSelectElement | null;
+const exportFrame = document.getElementById('export-frame') as HTMLSelectElement | null;
 const exportType = document.getElementById('export-type') as HTMLSelectElement | null;
 const exportEmbed = document.getElementById('export-image-embed') as HTMLSelectElement | null;
 const exportMax = document.getElementById('export-image-max') as HTMLInputElement | null;
@@ -136,29 +135,33 @@ function downloadText(text: string, filename: string, type: string) {
 }
 
 exportBtn?.addEventListener('click', async () => {
-  const scope = (exportScope?.value ?? 'all') as 'all' | 'selection';
+  const frameId = exportFrame?.value || app.getFrames()[0]?.id;
+  if (!frameId) return;
   const type = (exportType?.value ?? 'png') as 'png' | 'jpg' | 'svg';
   const embed = (exportEmbed?.value ?? 'original') as 'original' | 'display' | 'max';
   const maxEdge = Math.max(64, Number(exportMax?.value ?? 2048));
+  const preset = await app.addExportSetting(frameId, {
+    format: type,
+    scale: 1,
+    suffix: '',
+    backgroundMode: type === 'jpg' ? 'solid' : 'auto',
+    backgroundColor: type === 'jpg' ? '#ffffff' : undefined,
+    imageEmbed: embed,
+    imageMaxEdge: maxEdge,
+  }, { recordHistory: false });
+  if (!preset) return;
 
-  if (type === 'svg') {
-    const svg = await app.exportSVG({
-      scope,
-      imageEmbed: embed,
-      imageMaxEdge: maxEdge,
-    });
-    if (!svg) return;
-    downloadText(svg, `export-${scope}.svg`, 'image/svg+xml');
-    return;
+  try {
+    const asset = await app.exportNodeByPreset(frameId, preset.id);
+    if (!asset) return;
+    if (asset.contentType === 'text') {
+      downloadText(asset.content, asset.filename, asset.mimeType);
+      return;
+    }
+    downloadDataUrl(asset.content, asset.filename);
+  } finally {
+    await app.deleteExportSetting(preset.id, { recordHistory: false });
   }
-
-  const dataUrl = await app.exportRaster({
-    type,
-    scope,
-    background: type === 'jpg' ? '#ffffff' : undefined,
-  });
-  if (!dataUrl) return;
-  downloadDataUrl(dataUrl, `export-${scope}.${type}`);
 });
 
 saveJsonBtn?.addEventListener('click', async () => {

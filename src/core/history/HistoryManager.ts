@@ -10,7 +10,7 @@ import { TextNode } from '../nodes/TextNode';
 import { GroupNode } from '../nodes/GroupNode';
 import { ImageNode } from '../nodes/ImageNode';
 import { FrameNode } from '../nodes/FrameNode';
-import type { ExportPresetStore } from '../export/exportSettings';
+import { normalizeExportPresetStore, type ExportPresetStore } from '../export/exportSettings';
 
 export type SerializedNode = {
   id: string;
@@ -31,6 +31,12 @@ export type SerializedNode = {
 
 type SceneSnapshot = {
   nodes: SerializedNode[];
+  exportStore?: ExportPresetStore;
+};
+
+type HistoryManagerOptions = {
+  getExportStore?: () => ExportPresetStore;
+  setExportStore?: (store: ExportPresetStore) => void;
 };
 
 export type SceneDocument = {
@@ -48,9 +54,13 @@ export class HistoryManager {
   private captureInFlight: Promise<void> | null = null;
 
   private objectLayer: Container;
+  private readonly getExportStore?: () => ExportPresetStore;
+  private readonly setExportStore?: (store: ExportPresetStore) => void;
 
-  constructor(objectLayer: Container) {
+  constructor(objectLayer: Container, options: HistoryManagerOptions = {}) {
     this.objectLayer = objectLayer;
+    this.getExportStore = options.getExportStore;
+    this.setExportStore = options.setExportStore;
   }
 
   async capture(): Promise<void> {
@@ -84,12 +94,17 @@ export class HistoryManager {
     const nodes = this.objectLayer.children
       .filter((c): c is BaseNode => c instanceof BaseNode)
       .map((node) => this.serializeNode(node));
-    return { nodes };
+    const exportStore = this.getExportStore ? normalizeExportPresetStore(this.getExportStore()) : undefined;
+    return { nodes, exportStore };
   }
 
   async exportDocument(): Promise<SceneDocument> {
     const snapshot = await this.serializeScene();
-    return { version: 1, nodes: snapshot.nodes };
+    const doc: SceneDocument = { version: 1, nodes: snapshot.nodes };
+    if (snapshot.exportStore) {
+      doc.exportStore = normalizeExportPresetStore(snapshot.exportStore);
+    }
+    return doc;
   }
 
   async importDocument(doc: SceneDocument): Promise<void> {
@@ -97,8 +112,8 @@ export class HistoryManager {
       throw new Error('Unsupported document version');
     }
     const normalized = this.normalizeDocument(doc);
-    await this.restore({ nodes: normalized.nodes });
-    const snapshot = { nodes: normalized.nodes };
+    await this.restore(normalized);
+    const snapshot = { nodes: normalized.nodes, exportStore: normalized.exportStore };
     this.lastSnapshotKey = this.snapshotKey(snapshot);
     this.undoStack = [snapshot];
     this.redoStack = [];
@@ -145,6 +160,7 @@ export class HistoryManager {
     return {
       version: 1,
       nodes: (doc.nodes ?? []).map((node) => this.normalizeNode(node)),
+      exportStore: normalizeExportPresetStore(doc.exportStore),
     };
   }
 
@@ -173,19 +189,18 @@ export class HistoryManager {
 
     if (node.type === 'frame') {
       const data = normalized.data ?? {};
+      const restData = { ...data } as Record<string, unknown>;
+      delete restData.borderColor;
+      delete restData.borderWidth;
       const backgroundColor =
         Object.prototype.hasOwnProperty.call(data, 'backgroundColor')
           ? this.toNullableColor(data.backgroundColor, '#ffffff')
           : '#ffffff';
-      const borderColor = this.toColor(data.borderColor, '#A0A0A0');
-      const borderWidth = Math.max(0, Math.round(this.toFiniteNumber(data.borderWidth, 1)));
       const clipContent = this.toBoolean(data.clipContent, true);
 
       normalized.data = {
-        ...data,
+        ...restData,
         backgroundColor,
-        borderColor,
-        borderWidth,
         clipContent,
       };
       normalized.width = Math.max(1, this.toFiniteNumber(normalized.width, 1));
@@ -299,8 +314,6 @@ export class HistoryManager {
         const n = node as FrameNode;
         base.data = {
           backgroundColor: n.backgroundColor,
-          borderColor: n.borderColor,
-          borderWidth: n.borderWidth,
           clipContent: n.clipContent,
         };
         base.children = n.children
@@ -320,6 +333,9 @@ export class HistoryManager {
     for (const data of snapshot.nodes) {
       const node = await this.deserializeNode(data);
       this.objectLayer.addChild(node);
+    }
+    if (this.setExportStore && snapshot.exportStore) {
+      this.setExportStore(normalizeExportPresetStore(snapshot.exportStore));
     }
   }
 
@@ -461,9 +477,6 @@ export class HistoryManager {
           Object.prototype.hasOwnProperty.call(data.data ?? {}, 'backgroundColor')
             ? (data.data?.backgroundColor ?? null)
             : '#ffffff';
-        const borderColor = String(data.data?.borderColor ?? style.stroke ?? '#A0A0A0');
-        const borderWidthRaw = Number(data.data?.borderWidth ?? style.strokeWidth ?? 1);
-        const borderWidth = Number.isFinite(borderWidthRaw) ? Math.max(0, Math.round(borderWidthRaw)) : 1;
         node = new FrameNode({
           id: data.id,
           name: data.name,
@@ -478,8 +491,6 @@ export class HistoryManager {
           visible: data.visible,
           locked: data.locked,
           backgroundColor,
-          borderColor,
-          borderWidth,
           clipContent: data.data?.clipContent ?? true,
         });
         break;

@@ -26,8 +26,8 @@ app.useTool('select');
 - Transform tools: move, resize, rotate, multi-select
 - Shift to constrain resize ratio
 - Undo/redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y)
-- Export: PNG/JPG/SVG (all objects or selection)
-- Save/Load: JSON with embedded image data URLs + per-node export settings
+- Export: PNG/JPG/SVG via node-linked presets
+- Save/Load: JSON with embedded image data URLs + document export preset store
 - Rulers with pan/zoom indicators
 
 ## API Highlights
@@ -36,16 +36,6 @@ app.useTool('select');
 // Tools
 app.useTool('rectangle');
 app.useTool('frame'); // drag to draw a frame
-
-// Export raster (PNG/JPG)
-const png = await app.exportRaster({ type: 'png', scope: 'all' });
-
-// Export SVG (embed images)
-const svg = await app.exportSVG({
-  scope: 'selection',
-  imageEmbed: 'display', // 'original' | 'display' | 'max'
-  imageMaxEdge: 2048,
-});
 
 // Save/Load JSON (embedded images)
 const doc = await app.exportJSON();
@@ -57,14 +47,11 @@ const frame = await app.addFrame({
   width: 1280,
   height: 720,
   backgroundColor: '#ffffff',
-  borderColor: '#A0A0A0',
-  borderWidth: 1,
   clipContent: true,
 });
 const frames = app.getFrames();
-const framePng = await app.exportRaster({ type: 'png', scope: 'frame', frameId: frame?.id });
 
-// Per-node export presets (persisted in exportJSON/importJSON)
+// Document export preset store linked to node ids (persisted in exportJSON/importJSON)
 const preset = await app.addExportSetting(frame!.id, {
   format: 'png',
   scale: 2,
@@ -210,7 +197,7 @@ Think of `Frame` as an artboard/container that can also be used as an export bou
 - Supports background color or transparent background
 - Supports clipping/masking at frame bounds (`clipContent`)
 - Can be target of drag/drop reparent operations (`inside`)
-- Can be used as export scope
+- Can be used as export target node for preset-based export
 
 ### Drawing and Moving In/Out of Frame
 
@@ -262,48 +249,17 @@ const frame = await app.addFrame({
   width: 1280,
   height: 720,
   backgroundColor: '#ffffff', // null for transparent
-  borderColor: '#A0A0A0',
-  borderWidth: 1,
   clipContent: true,
 });
 
 const frames = app.getFrames();
 
-// export by frame
-const png = await app.exportRaster({
-  type: 'png',
-  scope: 'frame',
-  frameId: frame.id,
-});
+// export by preset
+const pngPreset = await app.addExportSetting(frame.id, { format: 'png', scale: 1, suffix: '' });
+const pngAsset = pngPreset ? await app.exportNodeByPreset(frame.id, pngPreset.id) : null;
 ```
 
-## Export Options
-
-```ts
-// Raster
-exportRaster({
-  type: 'png' | 'jpg',
-  scope: 'all' | 'selection' | 'frame',
-  frameId?: string,        // required when scope === 'frame'
-  quality?: number,        // for JPG
-  scale?: number,          // output pixel ratio, e.g. 1/2/3
-  padding?: number,        // extra pixels around bounds
-  background?: string,     // e.g. '#ffffff'
-});
-
-// SVG
-exportSVG({
-  scope: 'all' | 'selection' | 'frame',
-  frameId?: string,        // required when scope === 'frame'
-  padding?: number,
-  scale?: number,          // width/height multiplier (viewBox unchanged)
-  background?: string,
-  imageEmbed?: 'original' | 'display' | 'max',
-  imageMaxEdge?: number,
-});
-```
-
-## Node Export Presets (Figma-like)
+## Export Presets (Figma-like)
 
 Presets are stored in a centralized document-level registry (`exportStore`) and linked to nodes by id.
 This keeps lookup/edit fast and avoids recursive node scans.
@@ -342,14 +298,12 @@ await app.editExportSetting(added!.id, {
   suffix: '@2x',
 });
 
-// delete preset entity (and unlink from all nodes)
-await app.deleteExportSetting(added!.id);
-
 // list preset ids linked to a node
 const presetIds = app.getExportSettingIds(nodeId);
 
 // list all presets in document (without scanning nodes manually)
 const allPresets = app.getAllExportSettings();
+// [{ id, preset, linkedNodeIds }]
 
 // inspect linked nodes before editing shared presets
 const usedBy = app.getExportPresetUsage(preset!.id);
@@ -367,44 +321,24 @@ const assets = await app.exportNodesByPreset([
   { nodeId: frameA, presetId: frameAPreset!.id },
   { nodeId: frameB, presetId: frameBPreset!.id },
 ]);
+
+// delete preset entity (and unlink from all nodes)
+await app.deleteExportSetting(added!.id);
 ```
 
-## Export Contract (Revision)
+## Export Contract
 
-This section defines the intended behavior after introducing `Frame` as an artboard-like container.
+Preset-first only:
 
-### Scope Modes
+- Create preset via `addExportSetting(nodeId, preset)`
+- Edit/delete via `editExportSetting` / `deleteExportSetting`
+- Export only via `exportNodeByPreset(nodeId, presetId)` or `exportNodesByPreset(...)`
+- `presetId` must be explicitly provided and linked to that node
 
-- `scope: 'all'`
-  - Export all root-level content.
-- `scope: 'selection'`
-  - Export only currently selected nodes (including selected container descendants when relevant).
-- `scope: 'frame'`
-  - Export by `frameId`.
-  - Output bounds are always the frame boundary (`width/height`), not child bounds.
+Format behavior:
 
-### Frame Export Rules
-
-- `frameId` must exist and reference a frame node.
-- Background behavior:
-  - if frame background is set: render that color
-  - if frame background is transparent: keep transparency for PNG/SVG
-- Clipping behavior:
-  - if `clipContent = true`: clip children to frame boundary
-  - if `clipContent = false`: still keep output canvas as frame boundary, but children are rendered without clip (parts outside boundary are naturally cropped by output bounds)
-
-### Format Notes
-
-- `jpg` always exports opaque background (white fallback when transparent).
-- `png` and `svg` preserve transparency when no background is set.
-
-### Validation
-
-Export should fail fast (`null` or error) when:
-
-- `scope === 'frame'` but `frameId` is missing
-- `frameId` does not exist
-- referenced node is not a frame
+- `jpg` should use opaque background (`backgroundMode: 'solid'`, `backgroundColor`)
+- `png` / `svg` can keep transparency with `backgroundMode: 'auto'` or `'transparent'`
 
 ## Save/Load Contract (Revision)
 
@@ -422,7 +356,7 @@ This section defines the document model expectations after adding frames and exp
 - geometry: `x`, `y`, `width`, `height`
 - transform: `rotation` (currently fixed to 0 by interaction), `scale`
 - visibility/state: `visible`, `locked`
-- frame style: `backgroundColor`, `borderColor`, `borderWidth`
+- frame style: `backgroundColor`
 - frame behavior: `clipContent`
 - hierarchy: `children[]` in stable z-order
 
@@ -434,7 +368,7 @@ After `exportJSON -> importJSON`:
 - z-order must match
 - frame bounds/style/clip settings must match
 - locked/visible state must match
-- export output for same scope should remain equivalent
+- export output for same node + preset should remain equivalent
 - frame never appears as a child of group/frame after import normalization
 
 ### Versioning and Migration
@@ -446,8 +380,6 @@ After `exportJSON -> importJSON`:
 Import normalization defaults for frame fields:
 
 - `backgroundColor = '#ffffff'`
-- `borderColor = '#A0A0A0'`
-- `borderWidth = 1`
 - `clipContent = true`
 
 ### Server Persistence Flow
@@ -480,7 +412,7 @@ After `exportJSON -> save to server -> load from server -> importJSON`:
 
 ### Post-change Checklist
 
-- Verify `all/selection/frame` export for PNG/JPG/SVG.
+- Verify preset-based export for PNG/JPG/SVG on target nodes.
 - Verify frame with `clipContent` on/off.
 - Verify frame remains root-only after save/load.
 - Verify lock/visible states survive save/load.
@@ -490,6 +422,7 @@ After `exportJSON -> save to server -> load from server -> importJSON`:
 
 - Group-first hit test: pointer hover/click on a group or any descendant selects the group.
 - Frame-child-first hit test: inside frame, children are preferred over selecting frame body.
+- Frame body selection is intentionally disabled on canvas hit-test; select frame via label or layer/API.
 - Layer panel/API can still select specific child ids directly (`selectNodeById` / `selectNodesById`).
 
 ## UI Recommendation (Figma-like Export)

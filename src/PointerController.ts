@@ -360,7 +360,7 @@ export class PointerController {
         this.transformMoved = false;
       }
     } else if (
-      ['frame', 'rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
+      ['frame', 'rectangle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
     ) {
       const drawingTargetFrame = this.findTopFrameAtPoint(globalPoint);
       this.drawingParentFrameId =
@@ -430,7 +430,7 @@ export class PointerController {
 
       this.updateHover((hitObject as BaseNode) || null, true);
     } else if (
-      ['frame', 'rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
+      ['frame', 'rectangle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
     ) {
       this.preview.update(this.snapWorldPoint(point));
     }
@@ -512,8 +512,6 @@ export class PointerController {
           x: Math.round(frameX),
           y: Math.round(frameY),
           backgroundColor: '#ffffff',
-          borderColor: '#A0A0A0',
-          borderWidth: 1,
           clipContent: true,
           style: { opacity: 1 },
         });
@@ -748,7 +746,8 @@ export class PointerController {
           continue;
         }
 
-        // Frame-child-first selection: descendants are preferred over frame body.
+        // Intentional behavior: frame body is not directly selectable on canvas hit-test.
+        // Users can select frames via frame label or layer panel/API.
         if (child instanceof FrameNode) {
           const nested = findInContainer(child);
           if (nested) return nested;

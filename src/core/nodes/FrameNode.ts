@@ -7,8 +7,6 @@ export class FrameNode extends BaseNode {
   protected backgroundGraphics: Graphics;
   protected clipGraphics: Graphics;
   private _backgroundColor: string | null;
-  private _borderColor: string;
-  private _borderWidth: number;
   private _clipContent: boolean;
 
   constructor(options: {
@@ -24,8 +22,6 @@ export class FrameNode extends BaseNode {
     visible?: boolean;
     locked?: boolean;
     backgroundColor?: string | null;
-    borderColor?: string;
-    borderWidth?: number;
     clipContent?: boolean;
     children?: BaseNode[];
   }) {
@@ -45,8 +41,6 @@ export class FrameNode extends BaseNode {
     this._width = options.width;
     this._height = options.height;
     this._backgroundColor = options.backgroundColor ?? '#ffffff';
-    this._borderColor = options.borderColor ?? '#A0A0A0';
-    this._borderWidth = this.normalizeBorderWidth(options.borderWidth ?? 1);
     this._clipContent = options.clipContent ?? true;
 
     this.backgroundGraphics = new Graphics();
@@ -62,7 +56,6 @@ export class FrameNode extends BaseNode {
 
   protected redraw(): void {
     const opacity = this.style.opacity ?? 1;
-    const strokeColor = parseInt(this._borderColor.replace('#', ''), 16);
 
     this.backgroundGraphics.clear();
     this.backgroundGraphics.rect(0, 0, this.width, this.height);
@@ -73,11 +66,6 @@ export class FrameNode extends BaseNode {
         alpha: opacity,
       });
     }
-    this.backgroundGraphics.stroke({
-      color: strokeColor ?? 0xa0a0a0,
-      width: this._borderWidth,
-      alpha: opacity,
-    });
 
     this.clipGraphics.clear();
     this.clipGraphics.rect(0, 0, this.width, this.height);
@@ -108,12 +96,6 @@ export class FrameNode extends BaseNode {
     if (style.fill !== undefined) {
       this.setBackgroundColor(style.fill === null ? null : String(style.fill));
     }
-    if (style.stroke !== undefined) {
-      this.setBorderColor(String(style.stroke));
-    }
-    if (style.strokeWidth !== undefined) {
-      this.setBorderWidth(Number(style.strokeWidth));
-    }
     this.redraw();
     return this;
   }
@@ -126,30 +108,6 @@ export class FrameNode extends BaseNode {
     this._backgroundColor = backgroundColor;
     this.redraw();
     return this;
-  }
-
-  get borderColor(): string {
-    return this._borderColor;
-  }
-
-  setBorderColor(borderColor: string): this {
-    this._borderColor = borderColor;
-    this.redraw();
-    return this;
-  }
-
-  get borderWidth(): number {
-    return this._borderWidth;
-  }
-
-  setBorderWidth(borderWidth: number): this {
-    this._borderWidth = this.normalizeBorderWidth(borderWidth);
-    this.redraw();
-    return this;
-  }
-
-  private normalizeBorderWidth(value: number): number {
-    return Math.max(0, Math.round(Number.isFinite(value) ? value : 0));
   }
 
   get clipContent(): boolean {
@@ -174,24 +132,6 @@ export class FrameNode extends BaseNode {
         type: 'color',
         value: this.backgroundColor,
         desc: 'Frame background color (null = transparent)',
-        group: 'Appearance',
-      },
-      {
-        name: 'Border Color',
-        key: 'borderColor',
-        type: 'color',
-        value: this.borderColor,
-        desc: 'Frame border color',
-        group: 'Appearance',
-      },
-      {
-        name: 'Border Width',
-        key: 'borderWidth',
-        type: 'int',
-        value: this.borderWidth,
-        desc: 'Frame border width',
-        min: 0,
-        step: 1,
         group: 'Appearance',
       },
       {
@@ -222,8 +162,6 @@ export class FrameNode extends BaseNode {
       visible: this.visible,
       locked: this.locked,
       backgroundColor: this.backgroundColor,
-      borderColor: this.borderColor,
-      borderWidth: this.borderWidth,
       clipContent: this.clipContent,
       children: clonedChildren,
     });

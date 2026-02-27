@@ -34,7 +34,6 @@ export type ToolName =
   | 'select'
   | 'frame'
   | 'rectangle'
-  | 'circle'
   | 'text'
   | 'line'
   | 'ellipse'
@@ -61,8 +60,6 @@ export interface AddFrameOptions {
   space?: 'world' | 'screen';
   name?: string;
   backgroundColor?: string | null;
-  borderColor?: string;
-  borderWidth?: number;
   clipContent?: boolean;
 }
 
@@ -116,7 +113,6 @@ export const TOOL_CURSOR: Record<ToolName, string | null> = {
   select: null,
   frame: 'crosshair',
   rectangle: 'crosshair',
-  circle: 'crosshair',
   ellipse: 'crosshair',
   line: 'crosshair',
   star: 'crosshair',
@@ -267,7 +263,13 @@ export class CCDApp extends EventTarget {
     this.app.ticker.add(this.syncStageHitArea);
 
     this.initPointerController();
-    this.history = new HistoryManager(this.objectLayer);
+    this.history = new HistoryManager(this.objectLayer, {
+      getExportStore: () => this.snapshotExportPresetStore(),
+      setExportStore: (store) => {
+        this.exportPresetStore = normalizeExportPresetStore(store);
+        this.ensureExportStoreConsistency();
+      },
+    });
     await this.history.capture();
     this.ruler = new RulerOverlay(this.uiLayer, () => ({
       width: this.app.screen.width,
@@ -330,6 +332,7 @@ export class CCDApp extends EventTarget {
       this.app,
       this.world,
       async () => {
+        this.ensureExportStoreConsistency();
         await this.history?.capture();
       },
       this
@@ -705,8 +708,6 @@ export class CCDApp extends EventTarget {
       x: Math.round(point.x),
       y: Math.round(point.y),
       backgroundColor: options.backgroundColor ?? '#ffffff',
-      borderColor: options.borderColor ?? '#A0A0A0',
-      borderWidth: options.borderWidth ?? 1,
       clipContent: options.clipContent ?? true,
       style: {
         opacity: 1,
@@ -757,139 +758,6 @@ export class CCDApp extends EventTarget {
       this.app.renderer.events.mapPositionToPoint(p, clientX, clientY);
     }
     return this.world.toLocal(p);
-  }
-
-  async exportRaster(options: {
-    type: 'png' | 'jpg';
-    scope: 'all' | 'selection' | 'frame';
-    frameId?: string;
-    quality?: number;
-    padding?: number;
-    background?: string;
-    scale?: number;
-  }): Promise<string | null> {
-    const bounds = this.getExportBounds(options.scope, options.frameId);
-    if (!bounds) return null;
-
-    const padding = options.padding ?? 0;
-    const scale = Math.max(0.01, Number.isFinite(Number(options.scale)) ? Number(options.scale) : 1);
-    const width = Math.max(1, Math.ceil(bounds.width + padding * 2));
-    const height = Math.max(1, Math.ceil(bounds.height + padding * 2));
-
-    const rt = RenderTexture.create({ width, height, resolution: scale });
-    const transform = new Matrix().translate(-bounds.x + padding, -bounds.y + padding);
-
-    const clearColor =
-      options.background !== undefined
-        ? this.toColorNumber(options.background)
-        : options.type === 'jpg'
-          ? 0xffffff
-          : new Color(0x000000).setAlpha(0);
-
-    const render = () =>
-      this.app.renderer.render({
-        container: this.objectLayer,
-        target: rt,
-        clear: true,
-        clearColor,
-        transform,
-      });
-
-    if (options.scope === 'selection') {
-      const selected = this.pointerController?.getSelectedNodes() ?? [];
-      const restore = this.applySelectionVisibility(selected);
-      try {
-        render();
-      } finally {
-        restore();
-      }
-    } else if (options.scope === 'frame') {
-      const frame = options.frameId ? this.findNodeById(this.objectLayer, options.frameId) : null;
-      if (!(frame instanceof FrameNode)) return null;
-      const restore = this.applySelectionVisibility([frame]);
-      try {
-        render();
-      } finally {
-        restore();
-      }
-    } else {
-      render();
-    }
-
-    const canvas = this.app.renderer.extract.canvas(rt);
-
-    if (canvas && canvas.toDataURL) {
-      const mime = options.type === 'jpg' ? 'image/jpeg' : 'image/png';
-
-      const dataUrl = canvas.toDataURL(mime, options.quality ?? 0.92);
-      rt.destroy(true);
-      return dataUrl;
-    }
-
-    rt.destroy(true);
-    return null;
-  }
-
-  async exportSVG(options: {
-    scope: 'all' | 'selection' | 'frame';
-    frameId?: string;
-    padding?: number;
-    imageEmbed?: 'original' | 'display' | 'max';
-    imageMaxEdge?: number;
-    background?: string;
-    scale?: number;
-  }): Promise<string | null> {
-    const bounds = this.getExportBounds(options.scope, options.frameId);
-    if (!bounds) return null;
-
-    const padding = options.padding ?? 0;
-    const scale = Math.max(0.01, Number.isFinite(Number(options.scale)) ? Number(options.scale) : 1);
-    const width = Math.max(1, Math.ceil(bounds.width + padding * 2));
-    const height = Math.max(1, Math.ceil(bounds.height + padding * 2));
-    const svgWidth = Math.max(1, Math.ceil(width * scale));
-    const svgHeight = Math.max(1, Math.ceil(height * scale));
-    const offsetX = -bounds.x + padding;
-    const offsetY = -bounds.y + padding;
-
-    const nodes =
-      options.scope === 'selection'
-        ? (this.pointerController?.getSelectedNodes() ?? [])
-        : options.scope === 'frame'
-          ? (() => {
-              const frame = options.frameId ? this.findNodeById(this.objectLayer, options.frameId) : null;
-              return frame instanceof FrameNode ? [frame] : [];
-            })()
-        : this.getRootNodes();
-    if (!nodes.length) return null;
-
-    const invWorld = this.world.worldTransform.clone().invert();
-    const parts: string[] = [];
-
-    if (options.background) {
-      parts.push(
-        `<rect x="0" y="0" width="${width}" height="${height}" fill="${options.background}"/>`
-      );
-    }
-
-    for (const node of nodes) {
-      parts.push(
-        await this.nodeToSvg(node, {
-          invWorld,
-          offsetX,
-          offsetY,
-          imageEmbed: options.imageEmbed ?? 'original',
-          imageMaxEdge: options.imageMaxEdge ?? 2048,
-        })
-      );
-    }
-
-    return [
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${width} ${height}">`,
-      `<g transform="translate(${offsetX} ${offsetY})">`,
-      parts.join(''),
-      `</g>`,
-      `</svg>`,
-    ].join('');
   }
 
   private async exportRasterNodes(
@@ -990,20 +858,6 @@ export class CCDApp extends EventTarget {
     ].join('');
   }
 
-  private getExportBounds(scope: 'all' | 'selection' | 'frame', frameId?: string) {
-    if (scope === 'frame') {
-      const frame = frameId ? this.findNodeById(this.objectLayer, frameId) : null;
-      if (!(frame instanceof FrameNode)) return null;
-      return this.getFrameBounds(frame);
-    }
-
-    const nodes = scope === 'selection'
-      ? (this.pointerController?.getSelectedNodes() ?? [])
-      : this.getRootNodes();
-    if (!nodes.length) return null;
-    return this.getBoundsFromNodes(nodes);
-  }
-
   private getFrameBounds(frame: FrameNode) {
     const tlGlobal = frame.toGlobal(new Point(0, 0));
     const brGlobal = frame.toGlobal(new Point(frame.width, frame.height));
@@ -1038,10 +892,6 @@ export class CCDApp extends EventTarget {
       width: maxX - minX,
       height: maxY - minY,
     };
-  }
-
-  private getRootNodes() {
-    return this.objectLayer.children.filter((c): c is BaseNode => c instanceof BaseNode);
   }
 
   private getAllBaseNodes(container: Container) {
@@ -1216,9 +1066,7 @@ export class CCDApp extends EventTarget {
           );
         const childSvg: string = (await Promise.all(children)).join('');
         const backgroundFill = n.backgroundColor ?? 'none';
-        const stroke = n.borderColor;
-        const strokeWidth = n.borderWidth;
-        const frameRect = `<rect x="0" y="0" width="${n.width}" height="${n.height}" fill="${backgroundFill}" stroke="${stroke}" stroke-width="${strokeWidth}" transform="${transform}"${opacity}/>`;
+        const frameRect = `<rect x="0" y="0" width="${n.width}" height="${n.height}" fill="${backgroundFill}" transform="${transform}"${opacity}/>`;
 
         if (!n.clipContent) {
           return `${frameRect}${childSvg}`;
@@ -1352,16 +1200,15 @@ export class CCDApp extends EventTarget {
   async exportJSON(): Promise<SceneDocument | null> {
     this.ensureExportStoreConsistency();
     const doc = await this.history?.exportDocument();
-    if (!doc) return null;
-    return {
-      ...doc,
-      exportStore: this.snapshotExportPresetStore(),
-    };
+    return doc ?? null;
   }
 
   async importJSON(doc: SceneDocument): Promise<void> {
-    await this.history?.importDocument(doc);
-    this.importExportPresetStore(doc);
+    if (this.history) {
+      await this.history.importDocument(doc);
+    } else {
+      this.importExportPresetStore(doc);
+    }
     this.dispatchLayerHierarchyChanged();
     this.pointerController?.clearSelection();
     this.world.scale.set(1);
@@ -1913,16 +1760,6 @@ export class CCDApp extends EventTarget {
               );
             }
             break;
-          case 'borderColor':
-            if (node.type === 'frame' && value !== null && value !== '') {
-              (node as FrameNode).setBorderColor(String(value));
-            }
-            break;
-          case 'borderWidth':
-            if (node.type === 'frame') {
-              (node as FrameNode).setBorderWidth(Number(value));
-            }
-            break;
           case 'clipContent':
             if (node.type === 'frame') {
               (node as FrameNode).setClipContent(this.parseBoolean(value));
@@ -1991,13 +1828,9 @@ export class CCDApp extends EventTarget {
         return;
       }
       if (key === 'stroke') {
-        if (value !== null && value !== '') {
-          frame.setBorderColor(String(value));
-        }
         return;
       }
       if (key === 'strokeWidth') {
-        frame.setBorderWidth(Number(value));
         return;
       }
       if (key === 'opacity') {
