@@ -3,6 +3,7 @@ import type { ToolName } from './index';
 
 export type ShapeCreatedEvent = CustomEvent<{
   shape: BaseNode;
+  parentId?: string | null;
 }>;
 
 export type ToolChangedEvent = CustomEvent<{

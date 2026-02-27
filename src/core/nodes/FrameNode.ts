@@ -6,7 +6,9 @@ export class FrameNode extends BaseNode {
   readonly type = 'frame' as const;
   protected backgroundGraphics: Graphics;
   protected clipGraphics: Graphics;
-  private _background: string | null;
+  private _backgroundColor: string | null;
+  private _borderColor: string;
+  private _borderWidth: number;
   private _clipContent: boolean;
 
   constructor(options: {
@@ -21,6 +23,10 @@ export class FrameNode extends BaseNode {
     style?: Style;
     visible?: boolean;
     locked?: boolean;
+    backgroundColor?: string | null;
+    borderColor?: string;
+    borderWidth?: number;
+    // legacy alias for backward compatibility
     background?: string | null;
     clipContent?: boolean;
     children?: BaseNode[];
@@ -40,7 +46,10 @@ export class FrameNode extends BaseNode {
 
     this._width = options.width;
     this._height = options.height;
-    this._background = options.background ?? '#ffffff';
+    this._backgroundColor =
+      options.backgroundColor !== undefined ? options.backgroundColor : (options.background ?? '#ffffff');
+    this._borderColor = options.borderColor ?? '#A0A0A0';
+    this._borderWidth = Math.max(0, options.borderWidth ?? 1);
     this._clipContent = options.clipContent ?? true;
 
     this.backgroundGraphics = new Graphics();
@@ -55,15 +64,13 @@ export class FrameNode extends BaseNode {
   }
 
   protected redraw(): void {
-    const stroke = this.style.stroke ?? '#A0A0A0';
-    const strokeWidth = this.style.strokeWidth ?? 1;
     const opacity = this.style.opacity ?? 1;
-    const strokeColor = typeof stroke === 'string' ? parseInt(stroke.replace('#', ''), 16) : stroke;
+    const strokeColor = parseInt(this._borderColor.replace('#', ''), 16);
 
     this.backgroundGraphics.clear();
     this.backgroundGraphics.rect(0, 0, this.width, this.height);
-    if (this._background !== null) {
-      const fillColor = parseInt(this._background.replace('#', ''), 16);
+    if (this._backgroundColor !== null) {
+      const fillColor = parseInt(this._backgroundColor.replace('#', ''), 16);
       this.backgroundGraphics.fill({
         color: fillColor,
         alpha: opacity,
@@ -71,7 +78,7 @@ export class FrameNode extends BaseNode {
     }
     this.backgroundGraphics.stroke({
       color: strokeColor ?? 0xa0a0a0,
-      width: strokeWidth,
+      width: this._borderWidth,
       alpha: opacity,
     });
 
@@ -101,18 +108,56 @@ export class FrameNode extends BaseNode {
 
   setStyle(style: Partial<Style>): this {
     this.style = { ...this.style, ...style };
+    if (style.fill !== undefined) {
+      this.setBackgroundColor(style.fill === null ? null : String(style.fill));
+    }
+    if (style.stroke !== undefined) {
+      this.setBorderColor(String(style.stroke));
+    }
+    if (style.strokeWidth !== undefined) {
+      this.setBorderWidth(Number(style.strokeWidth));
+    }
     this.redraw();
     return this;
   }
 
+  get backgroundColor(): string | null {
+    return this._backgroundColor;
+  }
+
+  setBackgroundColor(backgroundColor: string | null): this {
+    this._backgroundColor = backgroundColor;
+    this.redraw();
+    return this;
+  }
+
+  get borderColor(): string {
+    return this._borderColor;
+  }
+
+  setBorderColor(borderColor: string): this {
+    this._borderColor = borderColor;
+    this.redraw();
+    return this;
+  }
+
+  get borderWidth(): number {
+    return this._borderWidth;
+  }
+
+  setBorderWidth(borderWidth: number): this {
+    this._borderWidth = Math.max(0, Number.isFinite(borderWidth) ? borderWidth : 0);
+    this.redraw();
+    return this;
+  }
+
+  // legacy aliases
   get background(): string | null {
-    return this._background;
+    return this.backgroundColor;
   }
 
   setBackground(background: string | null): this {
-    this._background = background;
-    this.redraw();
-    return this;
+    return this.setBackgroundColor(background);
   }
 
   get clipContent(): boolean {
@@ -126,14 +171,35 @@ export class FrameNode extends BaseNode {
   }
 
   getProps(): NodePropertyDescriptor[] {
+    const baseProps = super
+      .getProps()
+      .filter((prop) => prop.key !== 'fill' && prop.key !== 'stroke' && prop.key !== 'strokeWidth');
     return [
-      ...super.getProps(),
+      ...baseProps,
       {
-        name: 'Background',
-        key: 'background',
+        name: 'Background Color',
+        key: 'backgroundColor',
         type: 'color',
-        value: this.background,
+        value: this.backgroundColor,
         desc: 'Frame background color (null = transparent)',
+        group: 'Appearance',
+      },
+      {
+        name: 'Border Color',
+        key: 'borderColor',
+        type: 'color',
+        value: this.borderColor,
+        desc: 'Frame border color',
+        group: 'Appearance',
+      },
+      {
+        name: 'Border Width',
+        key: 'borderWidth',
+        type: 'float',
+        value: this.borderWidth,
+        desc: 'Frame border width',
+        min: 0,
+        step: 1,
         group: 'Appearance',
       },
       {
@@ -163,7 +229,9 @@ export class FrameNode extends BaseNode {
       style: { ...this.style },
       visible: this.visible,
       locked: this.locked,
-      background: this.background,
+      backgroundColor: this.backgroundColor,
+      borderColor: this.borderColor,
+      borderWidth: this.borderWidth,
       clipContent: this.clipContent,
       children: clonedChildren,
     });

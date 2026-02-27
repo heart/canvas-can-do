@@ -64,7 +64,9 @@ const frame = await app.addFrame({
   name: 'Frame 1',
   width: 1280,
   height: 720,
-  background: '#ffffff',
+  backgroundColor: '#ffffff',
+  borderColor: '#A0A0A0',
+  borderWidth: 1,
   clipContent: true,
 });
 const frames = app.getFrames();
@@ -240,7 +242,9 @@ const frame = await app.addFrame({
   y: 80,
   width: 1280,
   height: 720,
-  background: '#ffffff', // null for transparent
+  backgroundColor: '#ffffff', // null for transparent
+  borderColor: '#A0A0A0',
+  borderWidth: 1,
   clipContent: true,
 });
 
@@ -277,6 +281,94 @@ exportSVG({
   imageMaxEdge?: number,
 });
 ```
+
+## Export Contract (Revision)
+
+This section defines the intended behavior after introducing `Frame` as an artboard-like container.
+
+### Scope Modes
+
+- `scope: 'all'`
+  - Export all root-level content.
+- `scope: 'selection'`
+  - Export only currently selected nodes (including selected container descendants when relevant).
+- `scope: 'frame'`
+  - Export by `frameId`.
+  - Output bounds are always the frame boundary (`width/height`), not child bounds.
+
+### Frame Export Rules
+
+- `frameId` must exist and reference a frame node.
+- Background behavior:
+  - if frame background is set: render that color
+  - if frame background is transparent: keep transparency for PNG/SVG
+- Clipping behavior:
+  - if `clipContent = true`: clip children to frame boundary
+  - if `clipContent = false`: still keep output canvas as frame boundary, but children are rendered without clip (parts outside boundary are naturally cropped by output bounds)
+
+### Format Notes
+
+- `jpg` always exports opaque background (white fallback when transparent).
+- `png` and `svg` preserve transparency when no background is set.
+
+### Validation
+
+Export should fail fast (`null` or error) when:
+
+- `scope === 'frame'` but `frameId` is missing
+- `frameId` does not exist
+- referenced node is not a frame
+
+## Save/Load Contract (Revision)
+
+This section defines the document model expectations after adding frames and expanded layer behavior.
+
+### Document Goals
+
+- Preserve exact hierarchy (parent/child + order).
+- Preserve per-node transform and visibility/locking.
+- Preserve frame-specific properties and behavior.
+- Keep backward compatibility with older documents where possible.
+
+### Required Frame Fields (logical model)
+
+- geometry: `x`, `y`, `width`, `height`
+- transform: `rotation` (currently fixed to 0 by interaction), `scale`
+- visibility/state: `visible`, `locked`
+- frame style: `backgroundColor`, `borderColor`, `borderWidth`
+- frame behavior: `clipContent`
+- hierarchy: `children[]` in stable z-order
+
+### Round-trip Invariants
+
+After `exportJSON -> importJSON`:
+
+- node count and hierarchy must match
+- z-order must match
+- frame bounds/style/clip settings must match
+- locked/visible state must match
+- export output for same scope should remain equivalent
+
+### Versioning and Migration
+
+- Current baseline is `document.version = 1` only.
+- Keep schema simple while not in production.
+- If schema changes later, introduce migrations in the next version.
+
+Import normalization defaults for frame fields:
+
+- `backgroundColor = '#ffffff'`
+- `borderColor = '#A0A0A0'`
+- `borderWidth = 1`
+- `clipContent = true`
+
+### Post-change Checklist
+
+- Verify `all/selection/frame` export for PNG/JPG/SVG.
+- Verify frame with `clipContent` on/off.
+- Verify nested frame/group save and reload.
+- Verify lock/visible states survive save/load.
+- Verify undo/redo still works immediately after load.
 
 ## Events
 

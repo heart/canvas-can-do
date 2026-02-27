@@ -100,6 +100,9 @@ export class SelectionManager {
 
     const selectedNode = Array.from(this.selectedNodes)[0];
     if (!selectedNode) return;
+    if (selectedNode.type === 'frame' && handle === 'rotate') {
+      return;
+    }
     this.singleMoveTransform = null;
     this.singleResizeTransform = null;
     if (handle === 'move' && selectedNode.type !== 'line') {
@@ -289,7 +292,7 @@ export class SelectionManager {
         return 'move';
       }
     } else {
-      if (node.parent instanceof GroupNode || node.parent instanceof FrameNode) {
+      if (node.type === 'frame' || node.parent instanceof GroupNode || node.parent instanceof FrameNode) {
         const bounds = this.getNodeBoundsInSelectionSpace(node);
         const scale = this.getWorldScale();
         const handleSize = 12 / scale;
@@ -690,7 +693,7 @@ export class SelectionManager {
         this.selectionGraphics.fill({ color: 0xffffff });
         this.selectionGraphics.stroke({ color: 0x0099ff, width: strokeWidth, alpha: 0.9 });
       } else {
-        if (node.parent instanceof GroupNode || node.parent instanceof FrameNode) {
+        if (node.type === 'frame' || node.parent instanceof GroupNode || node.parent instanceof FrameNode) {
           const bounds = this.getNodeBoundsInSelectionSpace(node);
           this.selectionGraphics.position.set(0, 0);
           this.selectionGraphics.rotation = 0;
@@ -1128,10 +1131,53 @@ export class SelectionManager {
     if (!parent) return [];
 
     const nodes = parent.children.filter((child): child is BaseNode => child instanceof BaseNode);
-    return nodes
+    const candidates = nodes
       .filter((node) => !excluded.has(node))
       .map((node) => this.getNodeBoundsInParentSpace(node))
       .filter((b) => Number.isFinite(b.x) && Number.isFinite(b.y) && b.width > 0 && b.height > 0);
+
+    // Include the nearest ancestor frame boundary as a snap target so children can snap to frame edges.
+    const ancestorFrame = this.findNearestAncestorFrame(seed ?? null);
+    if (ancestorFrame) {
+      const frameBounds = this.getContainerBoundsInTargetSpace(ancestorFrame, parent);
+      if (
+        Number.isFinite(frameBounds.x) &&
+        Number.isFinite(frameBounds.y) &&
+        frameBounds.width > 0 &&
+        frameBounds.height > 0
+      ) {
+        candidates.push(frameBounds);
+      }
+    }
+
+    return candidates;
+  }
+
+  private findNearestAncestorFrame(node: BaseNode | null): FrameNode | null {
+    let current = node?.parent as Container | null;
+    while (current) {
+      if (current instanceof FrameNode) return current;
+      current = current.parent;
+    }
+    return null;
+  }
+
+  private getContainerBoundsInTargetSpace(
+    container: Container,
+    target: Container
+  ): { x: number; y: number; width: number; height: number } {
+    if (container === target) {
+      return { x: 0, y: 0, width: container.width, height: container.height };
+    }
+    const b = container.getBounds();
+    const tl = target.toLocal(new Point(b.x, b.y));
+    const br = target.toLocal(new Point(b.x + b.width, b.y + b.height));
+    return {
+      x: Math.min(tl.x, br.x),
+      y: Math.min(tl.y, br.y),
+      width: Math.abs(br.x - tl.x),
+      height: Math.abs(br.y - tl.y),
+    };
   }
 
   private getNodeBoundsInParentSpace(node: BaseNode): { x: number; y: number; width: number; height: number } {

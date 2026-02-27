@@ -94,8 +94,9 @@ export class HistoryManager {
     if (!doc || doc.version !== 1) {
       throw new Error('Unsupported document version');
     }
-    await this.restore({ nodes: doc.nodes });
-    const snapshot = { nodes: doc.nodes };
+    const normalized = this.normalizeDocument(doc);
+    await this.restore({ nodes: normalized.nodes });
+    const snapshot = { nodes: normalized.nodes };
     this.lastSnapshotKey = this.snapshotKey(snapshot);
     this.undoStack = [snapshot];
     this.redoStack = [];
@@ -136,6 +137,96 @@ export class HistoryManager {
 
   private snapshotKey(snapshot: SceneSnapshot): string {
     return JSON.stringify(snapshot);
+  }
+
+  private normalizeDocument(doc: SceneDocument): SceneDocument {
+    return {
+      version: 1,
+      nodes: (doc.nodes ?? []).map((node) => this.normalizeNode(node)),
+    };
+  }
+
+  private normalizeNode(node: SerializedNode): SerializedNode {
+    const normalizedStyle: Style = { ...(node.style ?? {}) };
+    const normalizedScale = {
+      x: this.toFiniteNumber(node.scale?.x, 1),
+      y: this.toFiniteNumber(node.scale?.y, 1),
+    };
+
+    const normalized: SerializedNode = {
+      ...node,
+      name: typeof node.name === 'string' ? node.name : '',
+      visible: this.toBoolean(node.visible, true),
+      locked: this.toBoolean(node.locked, false),
+      x: this.toFiniteNumber(node.x, 0),
+      y: this.toFiniteNumber(node.y, 0),
+      rotation: this.toFiniteNumber(node.rotation, 0),
+      scale: normalizedScale,
+      width: node.width === undefined ? undefined : Math.max(0, this.toFiniteNumber(node.width, 0)),
+      height: node.height === undefined ? undefined : Math.max(0, this.toFiniteNumber(node.height, 0)),
+      style: normalizedStyle,
+      data: node.data ? { ...node.data } : undefined,
+      children: node.children?.map((child) => this.normalizeNode(child)),
+    };
+
+    if (node.type === 'frame') {
+      const data = normalized.data ?? {};
+      const legacyBackground =
+        Object.prototype.hasOwnProperty.call(data, 'background')
+          ? this.toNullableColor(data.background, '#ffffff')
+          : undefined;
+      const backgroundColor =
+        Object.prototype.hasOwnProperty.call(data, 'backgroundColor')
+          ? this.toNullableColor(data.backgroundColor, '#ffffff')
+          : (legacyBackground ?? '#ffffff');
+      const borderColor = this.toColor(data.borderColor, '#A0A0A0');
+      const borderWidth = Math.max(0, this.toFiniteNumber(data.borderWidth, 1));
+      const clipContent = this.toBoolean(data.clipContent, true);
+
+      normalized.data = {
+        ...data,
+        backgroundColor,
+        borderColor,
+        borderWidth,
+        clipContent,
+      };
+      normalized.width = Math.max(1, this.toFiniteNumber(normalized.width, 1));
+      normalized.height = Math.max(1, this.toFiniteNumber(normalized.height, 1));
+    }
+
+    return normalized;
+  }
+
+  private toFiniteNumber(value: unknown, fallback: number): number {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  private toBoolean(value: unknown, fallback: boolean): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+      if (['false', '0', 'no', 'off', 'null', 'undefined', ''].includes(normalized)) return false;
+    }
+    return fallback;
+  }
+
+  private toColor(value: unknown, fallback: string): string {
+    if (typeof value !== 'string') return fallback;
+    const text = value.trim();
+    return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(text) ? text : fallback;
+  }
+
+  private toNullableColor(value: unknown, fallback: string): string | null {
+    if (value === null) return null;
+    if (typeof value !== 'string') return fallback;
+    const text = value.trim();
+    if (!text || text.toLowerCase() === 'none' || text.toLowerCase() === 'transparent') {
+      return null;
+    }
+    return this.toColor(text, fallback);
   }
 
   private serializeNode(node: BaseNode): SerializedNode {
@@ -209,7 +300,9 @@ export class HistoryManager {
       case 'frame': {
         const n = node as FrameNode;
         base.data = {
-          background: n.background,
+          backgroundColor: n.backgroundColor,
+          borderColor: n.borderColor,
+          borderWidth: n.borderWidth,
           clipContent: n.clipContent,
         };
         base.children = n.children
@@ -360,6 +453,17 @@ export class HistoryManager {
         for (const child of data.children ?? []) {
           children.push(await this.deserializeNode(child));
         }
+        const legacyBackground =
+          Object.prototype.hasOwnProperty.call(data.data ?? {}, 'background')
+            ? (data.data?.background ?? null)
+            : undefined;
+        const backgroundColor =
+          Object.prototype.hasOwnProperty.call(data.data ?? {}, 'backgroundColor')
+            ? (data.data?.backgroundColor ?? null)
+            : (legacyBackground ?? '#ffffff');
+        const borderColor = String(data.data?.borderColor ?? style.stroke ?? '#A0A0A0');
+        const borderWidthRaw = Number(data.data?.borderWidth ?? style.strokeWidth ?? 1);
+        const borderWidth = Number.isFinite(borderWidthRaw) ? Math.max(0, borderWidthRaw) : 1;
         node = new FrameNode({
           id: data.id,
           name: data.name,
@@ -373,10 +477,9 @@ export class HistoryManager {
           style,
           visible: data.visible,
           locked: data.locked,
-          background:
-            Object.prototype.hasOwnProperty.call(data.data ?? {}, 'background')
-              ? (data.data?.background ?? null)
-              : '#ffffff',
+          backgroundColor,
+          borderColor,
+          borderWidth,
           clipContent: data.data?.clipContent ?? true,
         });
         break;

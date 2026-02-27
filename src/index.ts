@@ -50,6 +50,10 @@ export interface AddFrameOptions {
   y?: number;
   space?: 'world' | 'screen';
   name?: string;
+  backgroundColor?: string | null;
+  borderColor?: string;
+  borderWidth?: number;
+  // legacy alias
   background?: string | null;
   clipContent?: boolean;
 }
@@ -133,7 +137,21 @@ export class CCDApp extends EventTarget {
   };
   private readonly onPointerControllerShapeCreated = ((e: ShapeCreatedEvent) => {
     const shape = e.detail.shape;
+    const parentId = e.detail.parentId ?? null;
     this.objectLayer.addChild(shape);
+    if (parentId) {
+      const target = this.findNodeById(this.objectLayer, parentId);
+      if (target instanceof FrameNode && !target.locked) {
+        const transform = {
+          origin: shape.toGlobal(new Point(0, 0)),
+          xAxis: shape.toGlobal(new Point(1, 0)),
+          yAxis: shape.toGlobal(new Point(0, 1)),
+        };
+        this.objectLayer.removeChild(shape);
+        target.addChild(shape);
+        this.applyWorldTransformToParent(shape, target, transform);
+      }
+    }
     this.dispatchLayerHierarchyChanged();
     this.useTool('select');
     this.history?.capture();
@@ -627,14 +645,16 @@ export class CCDApp extends EventTarget {
       height,
       x: Math.round(point.x),
       y: Math.round(point.y),
-      background:
-        options.background === undefined
-          ? '#ffffff'
-          : options.background,
+      backgroundColor:
+        options.backgroundColor !== undefined
+          ? options.backgroundColor
+          : options.background === undefined
+            ? '#ffffff'
+            : options.background,
+      borderColor: options.borderColor ?? '#A0A0A0',
+      borderWidth: options.borderWidth ?? 1,
       clipContent: options.clipContent ?? true,
       style: {
-        stroke: '#A0A0A0',
-        strokeWidth: 1,
         opacity: 1,
       },
     });
@@ -1037,9 +1057,9 @@ export class CCDApp extends EventTarget {
             })
           );
         const childSvg: string = (await Promise.all(children)).join('');
-        const backgroundFill = n.background ?? 'none';
-        const stroke = n.style.stroke ?? '#A0A0A0';
-        const strokeWidth = n.style.strokeWidth ?? 1;
+        const backgroundFill = n.backgroundColor ?? 'none';
+        const stroke = n.borderColor;
+        const strokeWidth = n.borderWidth;
         const frameRect = `<rect x="0" y="0" width="${n.width}" height="${n.height}" fill="${backgroundFill}" stroke="${stroke}" stroke-width="${strokeWidth}" transform="${transform}"${opacity}/>`;
 
         if (!n.clipContent) {
@@ -1417,7 +1437,9 @@ export class CCDApp extends EventTarget {
             node.scale.y = Number(value);
             break;
           case 'rotation':
-            node.rotation = Number(value);
+            if (node.type !== 'frame') {
+              node.rotation = Number(value);
+            }
             break;
           case 'visible':
             node.visible = this.parseBoolean(value);
@@ -1459,10 +1481,21 @@ export class CCDApp extends EventTarget {
             }
             break;
           case 'background':
+          case 'backgroundColor':
             if (node.type === 'frame') {
-              (node as FrameNode).setBackground(
+              (node as FrameNode).setBackgroundColor(
                 value === null || value === '' ? null : String(value)
               );
+            }
+            break;
+          case 'borderColor':
+            if (node.type === 'frame' && value !== null && value !== '') {
+              (node as FrameNode).setBorderColor(String(value));
+            }
+            break;
+          case 'borderWidth':
+            if (node.type === 'frame') {
+              (node as FrameNode).setBorderWidth(Number(value));
             }
             break;
           case 'clipContent':
@@ -1526,6 +1559,28 @@ export class CCDApp extends EventTarget {
   }
 
   private applyStyle(node: BaseNode, key: string, value: any) {
+    if (node.type === 'frame') {
+      const frame = node as FrameNode;
+      if (key === 'fill') {
+        frame.setBackgroundColor(value === null || value === '' ? null : String(value));
+        return;
+      }
+      if (key === 'stroke') {
+        if (value !== null && value !== '') {
+          frame.setBorderColor(String(value));
+        }
+        return;
+      }
+      if (key === 'strokeWidth') {
+        frame.setBorderWidth(Number(value));
+        return;
+      }
+      if (key === 'opacity') {
+        frame.setStyle({ opacity: Number(value) });
+        return;
+      }
+    }
+
     const normalizedValue =
       key === 'strokeWidth'
         ? Math.max(0, Math.round(Number.isFinite(Number(value)) ? Number(value) : 0))
