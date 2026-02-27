@@ -661,6 +661,8 @@ export class PointerController {
     for (let i = children.length - 1; i >= 0; i--) {
       const child = children[i];
       if (child === this.objectLayer) continue;
+      if (!child.visible) continue;
+      if (child instanceof BaseNode && child.locked) continue;
       if ((child as any).type === 'line') {
         const line = child as any as LineNode;
         const startX = line.x + line.startX;

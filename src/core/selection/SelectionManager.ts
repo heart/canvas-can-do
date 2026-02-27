@@ -4,6 +4,7 @@ import { TransformController } from './TransformController';
 import { LineTransformController } from './LineTransformController';
 import type { LineNode } from '../nodes/LineNode';
 import { GroupNode } from '../nodes/GroupNode';
+import { FrameNode } from '../nodes/FrameNode';
 import { LayerHierarchy } from '../layers/LayerHierarchy';
 import type { InspectableNode } from '../nodes';
 
@@ -63,6 +64,10 @@ export class SelectionManager {
 
   startTransform(point: Point, handle?: string) {
     if (this.selectedNodes.size === 0) return;
+    const selected = Array.from(this.selectedNodes);
+    if (selected.some((node) => !node.visible || node.locked)) {
+      return;
+    }
 
     if (this.selectedNodes.size > 1) {
       const mode: 'move' | 'resize' = !handle || handle === 'move' ? 'move' : 'resize';
@@ -284,7 +289,7 @@ export class SelectionManager {
         return 'move';
       }
     } else {
-      if (node.parent instanceof GroupNode) {
+      if (node.parent instanceof GroupNode || node.parent instanceof FrameNode) {
         const bounds = this.getNodeBoundsInSelectionSpace(node);
         const scale = this.getWorldScale();
         const handleSize = 12 / scale;
@@ -387,7 +392,7 @@ export class SelectionManager {
       this.selectedNodes.clear();
     }
 
-    if (node) {
+    if (node && node.visible && !node.locked) {
       if (this.isMultiSelect && this.selectedNodes.has(node)) {
         // Toggle off
         this.selectedNodes.delete(node);
@@ -403,7 +408,7 @@ export class SelectionManager {
   selectMany(nodes: BaseNode[]) {
     this.selectedNodes.clear();
     nodes.forEach((n) => {
-      if (n) this.selectedNodes.add(n);
+      if (n && n.visible && !n.locked) this.selectedNodes.add(n);
     });
     this.updateSelectionVisuals();
     this.dispatchSelectionChanged();
@@ -554,6 +559,7 @@ export class SelectionManager {
   reorderSelected(container: Container, direction: -1 | 1): boolean {
     if (this.selectedNodes.size !== 1) return false;
     const node = Array.from(this.selectedNodes)[0];
+    if (!node.visible || node.locked) return false;
     const parent = node.parent as Container | null;
     if (!parent) return false;
 
@@ -590,7 +596,9 @@ export class SelectionManager {
 
   nudgeSelected(dx: number, dy: number): boolean {
     if (this.selectedNodes.size === 0) return false;
-    this.selectedNodes.forEach((node) => {
+    const nodes = Array.from(this.selectedNodes).filter((node) => node.visible && !node.locked);
+    if (!nodes.length) return false;
+    nodes.forEach((node) => {
       node.position.x += dx;
       node.position.y += dy;
     });
@@ -682,7 +690,7 @@ export class SelectionManager {
         this.selectionGraphics.fill({ color: 0xffffff });
         this.selectionGraphics.stroke({ color: 0x0099ff, width: strokeWidth, alpha: 0.9 });
       } else {
-        if (node.parent instanceof GroupNode) {
+        if (node.parent instanceof GroupNode || node.parent instanceof FrameNode) {
           const bounds = this.getNodeBoundsInSelectionSpace(node);
           this.selectionGraphics.position.set(0, 0);
           this.selectionGraphics.rotation = 0;

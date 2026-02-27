@@ -6,6 +6,7 @@ export * from './ImageNode';
 export * from './LineNode';
 export * from './EllipseNode';
 export * from './StarNode';
+export * from './FrameNode';
 export type {
   NodePropertyDescriptor,
   InspectableNode,

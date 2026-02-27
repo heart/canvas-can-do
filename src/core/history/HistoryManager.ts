@@ -9,6 +9,7 @@ import { StarNode } from '../nodes/StarNode';
 import { TextNode } from '../nodes/TextNode';
 import { GroupNode } from '../nodes/GroupNode';
 import { ImageNode } from '../nodes/ImageNode';
+import { FrameNode } from '../nodes/FrameNode';
 
 export type SerializedNode = {
   id: string;
@@ -205,6 +206,17 @@ export class HistoryManager {
           .map((child) => this.serializeNode(child));
         break;
       }
+      case 'frame': {
+        const n = node as FrameNode;
+        base.data = {
+          background: n.background,
+          clipContent: n.clipContent,
+        };
+        base.children = n.children
+          .filter((c): c is BaseNode => c instanceof BaseNode)
+          .map((child) => this.serializeNode(child));
+        break;
+      }
     }
 
     return base;
@@ -340,6 +352,32 @@ export class HistoryManager {
           style,
           visible: data.visible,
           locked: data.locked,
+        });
+        break;
+      }
+      case 'frame': {
+        const children = [];
+        for (const child of data.children ?? []) {
+          children.push(await this.deserializeNode(child));
+        }
+        node = new FrameNode({
+          id: data.id,
+          name: data.name,
+          children,
+          width: data.width ?? 0,
+          height: data.height ?? 0,
+          x: data.x,
+          y: data.y,
+          rotation: data.rotation,
+          scale: data.scale,
+          style,
+          visible: data.visible,
+          locked: data.locked,
+          background:
+            Object.prototype.hasOwnProperty.call(data.data ?? {}, 'background')
+              ? (data.data?.background ?? null)
+              : '#ffffff',
+          clipContent: data.data?.clipContent ?? true,
         });
         break;
       }

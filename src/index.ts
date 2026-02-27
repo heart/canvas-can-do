@@ -7,6 +7,8 @@ import { BaseNode } from './core/nodes/BaseNode';
 import type { InspectableNode } from './core/nodes';
 import { ImageNode } from './core/nodes/ImageNode';
 import { TextNode } from './core/nodes/TextNode';
+import { GroupNode } from './core/nodes/GroupNode';
+import { FrameNode } from './core/nodes/FrameNode';
 import { HistoryManager } from './core/history/HistoryManager';
 import type { SceneDocument } from './core/history/HistoryManager';
 import { RulerOverlay } from './core/ui/RulerOverlay';
@@ -39,6 +41,43 @@ export interface AddedNodeResult {
   type: InspectableNode['type'];
   inspectable: InspectableNode;
   update: NodePropUpdate;
+}
+
+export interface AddFrameOptions {
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
+  space?: 'world' | 'screen';
+  name?: string;
+  background?: string | null;
+  clipContent?: boolean;
+}
+
+export type LayerMovePosition = 'before' | 'after' | 'inside';
+
+export interface FlatLayerItem {
+  id: string;
+  type: BaseNode['type'];
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  parentId: string | null;
+  depth: number;
+  zIndex: number;
+  isGroup: boolean;
+  childCount: number;
+}
+
+export interface GetFlatLayersOptions {
+  parentId?: string | null;
+  recursive?: boolean;
+  topFirst?: boolean;
+}
+
+export interface LayerMoveValidation {
+  ok: boolean;
+  reason?: string;
 }
 
 export const TOOL_CURSOR: Record<ToolName, string | null> = {
@@ -562,6 +601,46 @@ export class CCDApp extends EventTarget {
     return this.addImageFromSource(source, point);
   }
 
+  /**
+   * Public API for adding a frame node.
+   * Default placement is the center of current viewport.
+   */
+  public async addFrame(options: AddFrameOptions): Promise<AddedNodeResult | null> {
+    const width = Math.max(1, Math.round(options.width));
+    const height = Math.max(1, Math.round(options.height));
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+
+    const point =
+      options.x !== undefined && options.y !== undefined
+        ? options.space === 'world'
+          ? new Point(options.x, options.y)
+          : this.getWorldPointFromClient(options.x, options.y, true)
+        : this.getWorldPointFromClient(
+            this.app.screen.width / 2 - width / 2,
+            this.app.screen.height / 2 - height / 2,
+            true
+          );
+
+    const node = new FrameNode({
+      name: options.name,
+      width,
+      height,
+      x: Math.round(point.x),
+      y: Math.round(point.y),
+      background:
+        options.background === undefined
+          ? '#ffffff'
+          : options.background,
+      clipContent: options.clipContent ?? true,
+      style: {
+        stroke: '#A0A0A0',
+        strokeWidth: 1,
+        opacity: 1,
+      },
+    });
+    return this.commitAddedNode(node);
+  }
+
   private async addImageFromSource(
     source: string | File | Blob,
     point: Point
@@ -608,12 +687,13 @@ export class CCDApp extends EventTarget {
 
   async exportRaster(options: {
     type: 'png' | 'jpg';
-    scope: 'all' | 'selection';
+    scope: 'all' | 'selection' | 'frame';
+    frameId?: string;
     quality?: number;
     padding?: number;
     background?: string;
   }): Promise<string | null> {
-    const bounds = this.getExportBounds(options.scope);
+    const bounds = this.getExportBounds(options.scope, options.frameId);
     if (!bounds) return null;
 
     const padding = options.padding ?? 0;
@@ -647,6 +727,15 @@ export class CCDApp extends EventTarget {
       } finally {
         restore();
       }
+    } else if (options.scope === 'frame') {
+      const frame = options.frameId ? this.findNodeById(this.objectLayer, options.frameId) : null;
+      if (!(frame instanceof FrameNode)) return null;
+      const restore = this.applySelectionVisibility([frame]);
+      try {
+        render();
+      } finally {
+        restore();
+      }
     } else {
       render();
     }
@@ -666,13 +755,14 @@ export class CCDApp extends EventTarget {
   }
 
   async exportSVG(options: {
-    scope: 'all' | 'selection';
+    scope: 'all' | 'selection' | 'frame';
+    frameId?: string;
     padding?: number;
     imageEmbed?: 'original' | 'display' | 'max';
     imageMaxEdge?: number;
     background?: string;
   }): Promise<string | null> {
-    const bounds = this.getExportBounds(options.scope);
+    const bounds = this.getExportBounds(options.scope, options.frameId);
     if (!bounds) return null;
 
     const padding = options.padding ?? 0;
@@ -684,7 +774,13 @@ export class CCDApp extends EventTarget {
     const nodes =
       options.scope === 'selection'
         ? (this.pointerController?.getSelectedNodes() ?? [])
+        : options.scope === 'frame'
+          ? (() => {
+              const frame = options.frameId ? this.findNodeById(this.objectLayer, options.frameId) : null;
+              return frame instanceof FrameNode ? [frame] : [];
+            })()
         : this.getRootNodes();
+    if (!nodes.length) return null;
 
     const invWorld = this.world.worldTransform.clone().invert();
     const parts: string[] = [];
@@ -716,13 +812,30 @@ export class CCDApp extends EventTarget {
     ].join('');
   }
 
-  private getExportBounds(scope: 'all' | 'selection') {
-    const nodes =
-      scope === 'selection'
-        ? (this.pointerController?.getSelectedNodes() ?? [])
-        : this.getRootNodes();
+  private getExportBounds(scope: 'all' | 'selection' | 'frame', frameId?: string) {
+    if (scope === 'frame') {
+      const frame = frameId ? this.findNodeById(this.objectLayer, frameId) : null;
+      if (!(frame instanceof FrameNode)) return null;
+      return this.getFrameBounds(frame);
+    }
+
+    const nodes = scope === 'selection'
+      ? (this.pointerController?.getSelectedNodes() ?? [])
+      : this.getRootNodes();
     if (!nodes.length) return null;
     return this.getBoundsFromNodes(nodes);
+  }
+
+  private getFrameBounds(frame: FrameNode) {
+    const tlGlobal = frame.toGlobal(new Point(0, 0));
+    const brGlobal = frame.toGlobal(new Point(frame.width, frame.height));
+    const tl = this.world.toLocal(tlGlobal);
+    const br = this.world.toLocal(brGlobal);
+    const x = Math.min(tl.x, br.x);
+    const y = Math.min(tl.y, br.y);
+    const width = Math.abs(br.x - tl.x);
+    const height = Math.abs(br.y - tl.y);
+    return { x, y, width, height };
   }
 
   private getBoundsFromNodes(nodes: BaseNode[]) {
@@ -814,6 +927,29 @@ export class CCDApp extends EventTarget {
     return 0xffffff;
   }
 
+  private parseBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') {
+        return true;
+      }
+      if (
+        normalized === 'false' ||
+        normalized === '0' ||
+        normalized === 'no' ||
+        normalized === 'off' ||
+        normalized === '' ||
+        normalized === 'null' ||
+        normalized === 'undefined'
+      ) {
+        return false;
+      }
+    }
+    return Boolean(value);
+  }
+
   private async nodeToSvg(
     node: BaseNode,
     opts: {
@@ -823,7 +959,7 @@ export class CCDApp extends EventTarget {
       imageEmbed: 'original' | 'display' | 'max';
       imageMaxEdge: number;
     }
-  ) {
+  ): Promise<string> {
     const m = node.worldTransform.clone();
     m.prepend(opts.invWorld);
     const transform = `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.tx} ${m.ty})`;
@@ -874,7 +1010,7 @@ export class CCDApp extends EventTarget {
       }
       case 'group': {
         const n = node as any;
-        const children = n.children
+        const children: Array<Promise<string>> = n.children
           .filter((c: any) => c instanceof BaseNode)
           .map((c: BaseNode) =>
             this.nodeToSvg(c, {
@@ -886,6 +1022,36 @@ export class CCDApp extends EventTarget {
             })
           );
         return (await Promise.all(children)).join('');
+      }
+      case 'frame': {
+        const n = node as FrameNode;
+        const children: Array<Promise<string>> = n.children
+          .filter((c): c is BaseNode => c instanceof BaseNode)
+          .map((c) =>
+            this.nodeToSvg(c, {
+              invWorld: opts.invWorld,
+              offsetX: opts.offsetX,
+              offsetY: opts.offsetY,
+              imageEmbed: opts.imageEmbed,
+              imageMaxEdge: opts.imageMaxEdge,
+            })
+          );
+        const childSvg: string = (await Promise.all(children)).join('');
+        const backgroundFill = n.background ?? 'none';
+        const stroke = n.style.stroke ?? '#A0A0A0';
+        const strokeWidth = n.style.strokeWidth ?? 1;
+        const frameRect = `<rect x="0" y="0" width="${n.width}" height="${n.height}" fill="${backgroundFill}" stroke="${stroke}" stroke-width="${strokeWidth}" transform="${transform}"${opacity}/>`;
+
+        if (!n.clipContent) {
+          return `${frameRect}${childSvg}`;
+        }
+
+        const clipId = `frame-clip-${n.id.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+        return [
+          `<defs><clipPath id="${clipId}"><rect x="0" y="0" width="${n.width}" height="${n.height}" transform="${transform}"/></clipPath></defs>`,
+          frameRect,
+          `<g clip-path="url(#${clipId})">${childSvg}</g>`,
+        ].join('');
       }
       default:
         return '';
@@ -1090,6 +1256,89 @@ export class CCDApp extends EventTarget {
     this.pointerController?.setHoverNode(node);
   }
 
+  public getFlatLayers(options: GetFlatLayersOptions = {}): FlatLayerItem[] {
+    const { parentId = null, recursive = true, topFirst = true } = options;
+    const parent = this.resolveLayerParent(parentId);
+    if (!parent) return [];
+
+    const layers: FlatLayerItem[] = [];
+    this.collectFlatLayers(parent, parentId, 0, layers, recursive, topFirst);
+    return layers;
+  }
+
+  public canMoveLayer(
+    sourceId: string,
+    targetId: string,
+    position: LayerMovePosition
+  ): LayerMoveValidation {
+    return this.validateLayerMove([sourceId], targetId, position);
+  }
+
+  public canMoveLayers(
+    sourceIds: string[],
+    targetId: string,
+    position: LayerMovePosition
+  ): LayerMoveValidation {
+    return this.validateLayerMove(sourceIds, targetId, position);
+  }
+
+  public async moveLayer(
+    sourceId: string,
+    targetId: string,
+    position: LayerMovePosition,
+    options: { recordHistory?: boolean } = {}
+  ): Promise<boolean> {
+    return this.moveLayers([sourceId], targetId, position, options);
+  }
+
+  public async moveLayers(
+    sourceIds: string[],
+    targetId: string,
+    position: LayerMovePosition,
+    options: { recordHistory?: boolean } = {}
+  ): Promise<boolean> {
+    const validation = this.validateLayerMove(sourceIds, targetId, position);
+    if (!validation.ok) return false;
+
+    const sourceNodes = this.getMoveSourceNodes(sourceIds);
+    const targetNode = this.findNodeById(this.objectLayer, targetId);
+    if (!targetNode) return false;
+
+    const destinationParent = position === 'inside' ? targetNode : (targetNode.parent as Container | null);
+    if (!destinationParent) return false;
+
+    const insertionIndex = this.resolveInsertionIndex(sourceNodes, destinationParent, targetNode, position);
+    const orderedNodes = sourceNodes
+      .slice()
+      .sort((a, b) => this.compareNodeStackOrder(a, b));
+    const transforms = new Map<string, { origin: Point; xAxis: Point; yAxis: Point }>();
+
+    orderedNodes.forEach((node) => {
+      transforms.set(node.id, {
+        origin: node.toGlobal(new Point(0, 0)),
+        xAxis: node.toGlobal(new Point(1, 0)),
+        yAxis: node.toGlobal(new Point(0, 1)),
+      });
+      node.parent?.removeChild(node);
+    });
+
+    let nextIndex = Math.max(0, Math.min(insertionIndex, destinationParent.children.length));
+    orderedNodes.forEach((node) => {
+      destinationParent.addChildAt(node, nextIndex);
+      const transform = transforms.get(node.id);
+      if (transform) {
+        this.applyWorldTransformToParent(node, destinationParent, transform);
+      }
+      nextIndex += 1;
+    });
+
+    this.dispatchLayerHierarchyChanged();
+    if (options.recordHistory !== false) {
+      await this.history?.capture();
+    }
+    return true;
+  }
+
   /**
    * Apply property updates to one or more nodes by id.
    * Pass the ids/props you received from `layer:changed` or `properties:changed`.
@@ -1133,6 +1382,9 @@ export class CCDApp extends EventTarget {
       }
 
       Object.entries(props).forEach(([key, value]) => {
+        if (node.locked && key !== 'locked' && key !== 'visible') {
+          return;
+        }
         if (
           node.type === 'star' &&
           (key === 'points' ||
@@ -1168,10 +1420,10 @@ export class CCDApp extends EventTarget {
             node.rotation = Number(value);
             break;
           case 'visible':
-            node.visible = Boolean(value);
+            node.visible = this.parseBoolean(value);
             break;
           case 'locked':
-            node.locked = Boolean(value);
+            node.locked = this.parseBoolean(value);
             break;
           case 'fill':
           case 'stroke':
@@ -1204,6 +1456,18 @@ export class CCDApp extends EventTarget {
           case 'text':
             if ('setText' in node) {
               (node as any).setText(value as string);
+            }
+            break;
+          case 'background':
+            if (node.type === 'frame') {
+              (node as FrameNode).setBackground(
+                value === null || value === '' ? null : String(value)
+              );
+            }
+            break;
+          case 'clipContent':
+            if (node.type === 'frame') {
+              (node as FrameNode).setClipContent(this.parseBoolean(value));
             }
             break;
           case 'startX':
@@ -1244,6 +1508,9 @@ export class CCDApp extends EventTarget {
     });
 
     if (touchedNodes.length) {
+      if (touchedNodes.some((node) => node.locked || !node.visible)) {
+        this.pointerController?.clearSelection();
+      }
       // Let listeners refresh panels
       const nodes: InspectableNode[] = touchedNodes
         .map((n) =>
@@ -1302,6 +1569,183 @@ export class CCDApp extends EventTarget {
       node.position.y + (which === 'start' ? node.startY : node.endY)
     );
     return node.parent ? node.parent.toGlobal(local) : local;
+  }
+
+  private resolveLayerParent(parentId: string | null): Container | null {
+    if (parentId === null) return this.objectLayer;
+    const node = this.findNodeById(this.objectLayer, parentId);
+    if (!node || !(node instanceof GroupNode || node instanceof FrameNode)) return null;
+    return node;
+  }
+
+  private collectFlatLayers(
+    parent: Container,
+    parentId: string | null,
+    depth: number,
+    output: FlatLayerItem[],
+    recursive: boolean,
+    topFirst: boolean
+  ) {
+    const nodes = parent.children.filter((child): child is BaseNode => child instanceof BaseNode);
+    const ordered = topFirst ? nodes.slice().reverse() : nodes.slice();
+
+    ordered.forEach((node) => {
+      output.push({
+        id: node.id,
+        type: node.type,
+        name: node.name,
+        visible: node.visible,
+        locked: node.locked,
+        parentId,
+        depth,
+        zIndex: parent.getChildIndex(node),
+        isGroup: node instanceof GroupNode,
+        childCount: node.children.filter((child): child is BaseNode => child instanceof BaseNode).length,
+      });
+
+      if (recursive && node instanceof GroupNode) {
+        this.collectFlatLayers(node, node.id, depth + 1, output, recursive, topFirst);
+      }
+    });
+  }
+
+  private validateLayerMove(
+    sourceIds: string[],
+    targetId: string,
+    position: LayerMovePosition
+  ): LayerMoveValidation {
+    if (!sourceIds.length) return { ok: false, reason: 'No source ids provided.' };
+    const uniqueIds = Array.from(new Set(sourceIds));
+    if (uniqueIds.includes(targetId)) {
+      return { ok: false, reason: 'Source and target cannot be the same node.' };
+    }
+
+    const resolvedNodes = uniqueIds.map((id) => this.findNodeById(this.objectLayer, id));
+    if (resolvedNodes.some((node) => !node)) {
+      return { ok: false, reason: 'Some source ids do not exist.' };
+    }
+
+    const sourceNodes = this.getMoveSourceNodes(uniqueIds);
+    if (!sourceNodes.length) {
+      return { ok: false, reason: 'No valid source nodes found.' };
+    }
+
+    const targetNode = this.findNodeById(this.objectLayer, targetId);
+    if (!targetNode) return { ok: false, reason: 'Target node not found.' };
+
+    const destinationParent = position === 'inside' ? targetNode : (targetNode.parent as Container | null);
+    if (!destinationParent) return { ok: false, reason: 'Target has no destination parent.' };
+    if (position === 'inside' && !(targetNode instanceof GroupNode || targetNode instanceof FrameNode)) {
+      return { ok: false, reason: 'Only group or frame nodes can accept inside drops.' };
+    }
+    if (
+      destinationParent instanceof BaseNode &&
+      destinationParent.locked
+    ) {
+      return { ok: false, reason: 'Destination parent is locked.' };
+    }
+    if (sourceNodes.some((node) => node.locked)) {
+      return { ok: false, reason: 'Locked nodes cannot be moved.' };
+    }
+    if (sourceNodes.some((node) => this.isAncestorNode(node, destinationParent))) {
+      return { ok: false, reason: 'Cannot move a node into its own descendant.' };
+    }
+    return { ok: true };
+  }
+
+  private resolveInsertionIndex(
+    sourceNodes: BaseNode[],
+    destinationParent: Container,
+    targetNode: BaseNode,
+    position: LayerMovePosition
+  ): number {
+    if (position === 'inside') {
+      return destinationParent.children.length;
+    }
+
+    let index = destinationParent.getChildIndex(targetNode);
+    if (position === 'after') {
+      index += 1;
+    }
+
+    sourceNodes.forEach((node) => {
+      if (node.parent !== destinationParent) return;
+      const childIndex = destinationParent.getChildIndex(node);
+      if (childIndex < index) {
+        index -= 1;
+      }
+    });
+    return index;
+  }
+
+  private getMoveSourceNodes(sourceIds: string[]): BaseNode[] {
+    const uniqueIds = Array.from(new Set(sourceIds));
+    const nodes = uniqueIds
+      .map((id) => this.findNodeById(this.objectLayer, id))
+      .filter((node): node is BaseNode => node !== null);
+    const nodeSet = new Set(nodes);
+    return nodes.filter((node) => !this.hasAncestorInSet(node, nodeSet));
+  }
+
+  private hasAncestorInSet(node: BaseNode, set: Set<BaseNode>): boolean {
+    let parent = node.parent;
+    while (parent) {
+      if (parent instanceof BaseNode && set.has(parent)) return true;
+      if (parent === this.objectLayer) break;
+      parent = parent.parent;
+    }
+    return false;
+  }
+
+  private isAncestorNode(ancestor: BaseNode, node: Container | null): boolean {
+    let current: Container | null = node;
+    while (current) {
+      if (current === ancestor) return true;
+      if (current === this.objectLayer) break;
+      current = current.parent;
+    }
+    return false;
+  }
+
+  private compareNodeStackOrder(a: BaseNode, b: BaseNode): number {
+    const pathA = this.getNodePathIndices(a);
+    const pathB = this.getNodePathIndices(b);
+    const len = Math.min(pathA.length, pathB.length);
+    for (let i = 0; i < len; i += 1) {
+      if (pathA[i] !== pathB[i]) return pathA[i] - pathB[i];
+    }
+    return pathA.length - pathB.length;
+  }
+
+  private getNodePathIndices(node: BaseNode): number[] {
+    const indices: number[] = [];
+    let current: Container | null = node;
+    while (current && current !== this.objectLayer) {
+      const parent = current.parent as Container | null;
+      if (!parent) break;
+      indices.push(parent.getChildIndex(current));
+      current = parent;
+    }
+    return indices.reverse();
+  }
+
+  private applyWorldTransformToParent(
+    node: BaseNode,
+    parent: Container,
+    transform: { origin: Point; xAxis: Point; yAxis: Point }
+  ) {
+    const origin = parent.toLocal(transform.origin);
+    const xAxis = parent.toLocal(transform.xAxis);
+    const yAxis = parent.toLocal(transform.yAxis);
+    const xVector = new Point(xAxis.x - origin.x, xAxis.y - origin.y);
+    const yVector = new Point(yAxis.x - origin.x, yAxis.y - origin.y);
+    const scaleX = Math.hypot(xVector.x, xVector.y) || 1;
+    const scaleY = Math.hypot(yVector.x, yVector.y) || 1;
+    const rotation = Math.atan2(xVector.y, xVector.x);
+
+    node.position.copyFrom(origin);
+    node.rotation = rotation;
+    node.scale.set(scaleX, scaleY);
   }
 
   private findNodeById(container: Container, id: string): BaseNode | null {
@@ -1371,6 +1815,15 @@ export class CCDApp extends EventTarget {
 
   getLayerHierarchy() {
     return LayerHierarchy.getHierarchy(this.objectLayer);
+  }
+
+  getFrames(): FrameNode[] {
+    return this.getAllBaseNodes(this.objectLayer).filter((node): node is FrameNode => node instanceof FrameNode);
+  }
+
+  getFrameById(id: string): FrameNode | null {
+    const node = this.findNodeById(this.objectLayer, id);
+    return node instanceof FrameNode ? node : null;
   }
 
   getPixiApp() {
