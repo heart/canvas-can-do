@@ -17,6 +17,13 @@ import { FrameNode } from './core/nodes/FrameNode';
 import { GroupNode } from './core/nodes/GroupNode';
 import { Application } from 'pixi.js';
 
+interface PointerMoveSnapshot {
+  clientX: number;
+  clientY: number;
+  offsetX: number;
+  offsetY: number;
+}
+
 export class PointerController {
   private preview: PreviewBase;
   private activeTool: ToolName = 'select';
@@ -54,6 +61,8 @@ export class PointerController {
   private transformMoved = false;
   private dropTargetFrameId: string | null = null;
   private drawingParentFrameId: string | null = null;
+  private pendingPointerMove: PointerMoveSnapshot | null = null;
+  private pointerMoveRafId: number | null = null;
 
   private isPanModeActive(): boolean {
     return this.isPanning || this.activeTool === 'pan';
@@ -72,7 +81,9 @@ export class PointerController {
     this.previewLayer = previewLayer;
     this.objectLayer = objectLayer;
     this.toolsLayer = toolsLayer;
-    this.onLayerChanged = onLayerChanged;
+    this.onLayerChanged = () => {
+      onLayerChanged();
+    };
     this.app = app;
     this.world = world;
     this.onHistoryCapture = onHistoryCapture;
@@ -201,7 +212,6 @@ export class PointerController {
       e.preventDefault();
       const group = this.selectionManager.createGroup();
       if (group) {
-        this.onLayerChanged();
         this.onHistoryCapture?.();
       }
     }
@@ -211,7 +221,6 @@ export class PointerController {
       e.preventDefault();
       const ungrouped = this.selectionManager.ungroupSelected();
       if (ungrouped.length) {
-        this.onLayerChanged();
         this.onHistoryCapture?.();
       }
     }
@@ -321,6 +330,8 @@ export class PointerController {
   }
 
   onPointerDown(e: PointerEvent) {
+    this.flushPendingPointerMove();
+
     if (this.isPanModeActive() && this.world && this.app) {
       this.lastPan = new Point(e.clientX, e.clientY);
       this.setCursor('grabbing');
@@ -329,7 +340,8 @@ export class PointerController {
 
     const point = this.toWorldPoint(e);
     const globalPoint = this.toGlobalPoint(e);
-    this.updateFrameLabels(globalPoint);
+    const frames = this.collectFramesInStackOrder();
+    this.updateFrameLabels(globalPoint, frames);
 
     if (this.activeTool === 'select') {
       // Check if we hit a transform handle first
@@ -362,7 +374,7 @@ export class PointerController {
     } else if (
       ['frame', 'rectangle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
     ) {
-      const drawingTargetFrame = this.findTopFrameAtPoint(globalPoint);
+      const drawingTargetFrame = this.findTopFrameAtPoint(globalPoint, frames);
       this.drawingParentFrameId =
         this.activeTool !== 'frame' && drawingTargetFrame && !drawingTargetFrame.locked
           ? drawingTargetFrame.id
@@ -404,45 +416,33 @@ export class PointerController {
       return;
     }
 
-    const point = this.toWorldPoint(e);
-    const globalPoint = this.toGlobalPoint(e);
-    this.updateFrameLabels(globalPoint);
+    this.pendingPointerMove = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      offsetX: e.offsetX,
+      offsetY: e.offsetY,
+    };
 
-    if (this.activeTool === 'select') {
-      // Update transform if in progress
-      this.selectionManager.updateTransform(globalPoint);
-      if (this.transformStartClient) {
-        const dx = e.clientX - this.transformStartClient.x;
-        const dy = e.clientY - this.transformStartClient.y;
-        if (Math.hypot(dx, dy) > 2) {
-          this.transformMoved = true;
-        }
-      }
-
-      if (this.activeTransformHandle === 'move' && this.transformMoved) {
-        this.dropTargetFrameId = this.resolveDropTargetFrameId(globalPoint);
-      } else {
-        this.dropTargetFrameId = null;
-      }
-
-      // Otherwise show hover state - search from top to bottom of z-order
-      const hitObject = this.findHitObject(globalPoint) ?? this.getFrameLabelHitNode(globalPoint);
-
-      this.updateHover((hitObject as BaseNode) || null, true);
-    } else if (
-      ['frame', 'rectangle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
-    ) {
-      this.preview.update(this.snapWorldPoint(point));
+    if (this.pointerMoveRafId === null) {
+      this.pointerMoveRafId = requestAnimationFrame(() => {
+        this.pointerMoveRafId = null;
+        const snapshot = this.pendingPointerMove;
+        this.pendingPointerMove = null;
+        if (!snapshot) return;
+        this.processPointerMove(snapshot);
+      });
     }
   }
 
   onPointerUp(e: PointerEvent) {
+    this.flushPendingPointerMove();
     const globalPoint = this.toGlobalPoint(e);
-    this.updateFrameLabels(globalPoint);
+    const frames = this.collectFramesInStackOrder();
+    this.updateFrameLabels(globalPoint, frames);
     if (this.activeTool === 'select') {
       this.selectionManager.endTransform();
       if (this.activeTransformHandle === 'move' && this.transformMoved) {
-        if (this.reparentSelectionIntoFrame(globalPoint)) {
+        if (this.reparentSelectionIntoFrame(globalPoint, frames)) {
           this.onLayerChanged();
         }
       }
@@ -622,6 +622,7 @@ export class PointerController {
   }
 
   cancel() {
+    this.cancelPendingPointerMove();
     this.preview.cancel();
     this.setTool('select');
     this.isPanning = false;
@@ -641,16 +642,90 @@ export class PointerController {
     canvas.style.cursor = name ? name : '';
   }
 
+  private processPointerMove(snapshot: PointerMoveSnapshot) {
+    const point = this.toWorldPointFromClient(
+      snapshot.clientX,
+      snapshot.clientY,
+      snapshot.offsetX,
+      snapshot.offsetY
+    );
+    const globalPoint = this.toGlobalPointFromClient(snapshot.clientX, snapshot.clientY);
+    const frames = this.collectFramesInStackOrder();
+    this.updateFrameLabels(globalPoint, frames);
+
+    if (this.activeTool === 'select') {
+      this.selectionManager.updateTransform(globalPoint);
+      if (this.transformStartClient) {
+        const dx = snapshot.clientX - this.transformStartClient.x;
+        const dy = snapshot.clientY - this.transformStartClient.y;
+        if (Math.hypot(dx, dy) > 2) {
+          this.transformMoved = true;
+        }
+      }
+
+      if (this.activeTransformHandle === 'move' && this.transformMoved) {
+        this.dropTargetFrameId = this.resolveDropTargetFrameId(globalPoint, frames);
+      } else {
+        this.dropTargetFrameId = null;
+      }
+
+      if (this.activeTransformHandle && this.transformMoved) {
+        this.updateHover(null, true);
+        return;
+      }
+
+      const hitObject = this.findHitObject(globalPoint) ?? this.getFrameLabelHitNode(globalPoint);
+      this.updateHover((hitObject as BaseNode) || null, true);
+      return;
+    }
+
+    if (['frame', 'rectangle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)) {
+      this.preview.update(this.snapWorldPoint(point));
+    }
+  }
+
+  private flushPendingPointerMove() {
+    if (!this.pendingPointerMove) return;
+    if (this.pointerMoveRafId !== null) {
+      cancelAnimationFrame(this.pointerMoveRafId);
+      this.pointerMoveRafId = null;
+    }
+    const snapshot = this.pendingPointerMove;
+    this.pendingPointerMove = null;
+    this.processPointerMove(snapshot);
+  }
+
+  private cancelPendingPointerMove() {
+    if (this.pointerMoveRafId !== null) {
+      cancelAnimationFrame(this.pointerMoveRafId);
+      this.pointerMoveRafId = null;
+    }
+    this.pendingPointerMove = null;
+  }
+
   private toGlobalPoint(e: PointerEvent): Point {
-    if (!this.app) return new Point(e.clientX, e.clientY);
+    return this.toGlobalPointFromClient(e.clientX, e.clientY);
+  }
+
+  private toGlobalPointFromClient(clientX: number, clientY: number): Point {
+    if (!this.app) return new Point(clientX, clientY);
     const p = new Point();
-    this.app.renderer.events.mapPositionToPoint(p, e.clientX, e.clientY);
+    this.app.renderer.events.mapPositionToPoint(p, clientX, clientY);
     return p;
   }
 
   private toWorldPoint(e: PointerEvent): Point {
-    if (!this.world || !this.app) return new Point(e.offsetX, e.offsetY);
-    const globalPoint = this.toGlobalPoint(e);
+    return this.toWorldPointFromClient(e.clientX, e.clientY, e.offsetX, e.offsetY);
+  }
+
+  private toWorldPointFromClient(
+    clientX: number,
+    clientY: number,
+    fallbackOffsetX: number,
+    fallbackOffsetY: number
+  ): Point {
+    if (!this.world || !this.app) return new Point(fallbackOffsetX, fallbackOffsetY);
+    const globalPoint = this.toGlobalPointFromClient(clientX, clientY);
     return this.world.toLocal(globalPoint);
   }
 
@@ -800,12 +875,12 @@ export class PointerController {
     return bounds.containsPoint(globalPoint.x, globalPoint.y);
   }
 
-  private updateFrameLabels(pointerGlobal?: Point) {
-    const frames = this.collectFramesInStackOrder();
-    this.frameLabelOrder = frames.map((frame) => frame.id);
-    this.frameNodesById = new Map(frames.map((frame) => [frame.id, frame]));
+  private updateFrameLabels(pointerGlobal?: Point, frames?: FrameNode[]) {
+    const frameList = frames ?? this.collectFramesInStackOrder();
+    this.frameLabelOrder = frameList.map((frame) => frame.id);
+    this.frameNodesById = new Map(frameList.map((frame) => [frame.id, frame]));
 
-    const nextIds = new Set(frames.map((frame) => frame.id));
+    const nextIds = new Set(frameList.map((frame) => frame.id));
     for (const [id, item] of this.frameLabelItems.entries()) {
       if (!nextIds.has(id)) {
         this.frameLabelLayer.removeChild(item.bg);
@@ -825,7 +900,7 @@ export class PointerController {
 
     const hoverFrameId = pointerGlobal ? this.getFrameLabelHoverId(pointerGlobal) : null;
 
-    frames.forEach((frame) => {
+    frameList.forEach((frame, index) => {
       const existing = this.frameLabelItems.get(frame.id);
       const item =
         existing ??
@@ -880,7 +955,7 @@ export class PointerController {
       item.label.style.fill = textColor;
       item.label.position.set(bounds.x + 5, bounds.y + 3);
 
-      const baseIndex = frames.indexOf(frame) * 2;
+      const baseIndex = index * 2;
       this.frameLabelLayer.setChildIndex(item.bg, Math.min(baseIndex, this.frameLabelLayer.children.length - 1));
       this.frameLabelLayer.setChildIndex(
         item.label,
@@ -943,8 +1018,8 @@ export class PointerController {
     return frames;
   }
 
-  private resolveDropTargetFrameId(globalPoint: Point): string | null {
-    const frame = this.findTopFrameAtPoint(globalPoint);
+  private resolveDropTargetFrameId(globalPoint: Point, frames?: FrameNode[]): string | null {
+    const frame = this.findTopFrameAtPoint(globalPoint, frames);
     if (!frame) return null;
     const selected = this.selectionManager.getSelectedNodes();
     if (selected.length !== 1) return null;
@@ -957,7 +1032,7 @@ export class PointerController {
     return frame.id;
   }
 
-  private reparentSelectionIntoFrame(globalPoint: Point): boolean {
+  private reparentSelectionIntoFrame(globalPoint: Point, frames?: FrameNode[]): boolean {
     const selected = this.selectionManager.getSelectedNodes();
     if (selected.length !== 1) return false;
 
@@ -965,7 +1040,7 @@ export class PointerController {
     if (!node || node instanceof FrameNode) return false;
     if (this.isGroupManagedNode(node)) return false;
 
-    const targetFrame = this.findTopFrameAtPoint(globalPoint);
+    const targetFrame = this.findTopFrameAtPoint(globalPoint, frames);
     if (!targetFrame) return false;
     if (targetFrame === node.parent) return false;
     if (targetFrame.locked || !targetFrame.visible) return false;
@@ -1011,23 +1086,10 @@ export class PointerController {
     return false;
   }
 
-  private findTopFrameAtPoint(globalPoint: Point): FrameNode | null {
-    const frames: FrameNode[] = [];
-    const walk = (container: Container) => {
-      container.children.forEach((child) => {
-        if (!(child instanceof BaseNode)) return;
-        if (child instanceof FrameNode) {
-          frames.push(child);
-        }
-        if (child.children.length) {
-          walk(child);
-        }
-      });
-    };
-    walk(this.objectLayer);
-
-    for (let i = frames.length - 1; i >= 0; i -= 1) {
-      const frame = frames[i];
+  private findTopFrameAtPoint(globalPoint: Point, frames?: FrameNode[]): FrameNode | null {
+    const frameList = frames ?? this.collectFramesInStackOrder();
+    for (let i = frameList.length - 1; i >= 0; i -= 1) {
+      const frame = frameList[i];
       if (!frame.visible) continue;
       const bounds = frame.getBounds();
       if (bounds.containsPoint(globalPoint.x, globalPoint.y)) {

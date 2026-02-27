@@ -8,6 +8,8 @@ import { FrameNode } from '../nodes/FrameNode';
 import { LayerHierarchy } from '../layers/LayerHierarchy';
 import type { InspectableNode } from '../nodes';
 
+type SnapBounds = { x: number; y: number; width: number; height: number };
+
 export class SelectionManager {
   private selectedNodes: Set<BaseNode> = new Set();
   private isMultiSelect = false;
@@ -19,6 +21,7 @@ export class SelectionManager {
   private propertiesChangedRafId: number | null = null;
   private objectSnapEnabled = true;
   private objectSnapThreshold = 6;
+  private snapCandidatesCache: SnapBounds[] | null = null;
   private singleMoveTransform:
     | {
         node: BaseNode;
@@ -70,9 +73,15 @@ export class SelectionManager {
     }
 
     if (this.selectedNodes.size > 1) {
+      this.snapCandidatesCache = this.objectSnapEnabled
+        ? this.buildSnapCandidates(new Set(selected))
+        : null;
       const mode: 'move' | 'resize' = !handle || handle === 'move' ? 'move' : 'resize';
       const bounds = this.getSelectedBoundsInParentSpace();
-      if (!Number.isFinite(bounds.width) || !Number.isFinite(bounds.height)) return;
+      if (!Number.isFinite(bounds.width) || !Number.isFinite(bounds.height)) {
+        this.snapCandidatesCache = null;
+        return;
+      }
       this.multiTransform = {
         mode,
         handle,
@@ -101,11 +110,15 @@ export class SelectionManager {
     const selectedNode = Array.from(this.selectedNodes)[0];
     if (!selectedNode) return;
     if (selectedNode.type === 'frame' && handle === 'rotate') {
+      this.snapCandidatesCache = null;
       return;
     }
     this.singleMoveTransform = null;
     this.singleResizeTransform = null;
     if (handle === 'move' && selectedNode.type !== 'line') {
+      this.snapCandidatesCache = this.objectSnapEnabled
+        ? this.buildSnapCandidates(new Set([selectedNode]))
+        : null;
       this.singleMoveTransform = {
         node: selectedNode,
         startPoint: point.clone(),
@@ -121,6 +134,9 @@ export class SelectionManager {
       handle !== 'move' &&
       handle !== 'rotate'
     ) {
+      this.snapCandidatesCache = this.objectSnapEnabled
+        ? this.buildSnapCandidates(new Set([selectedNode]))
+        : null;
       this.singleResizeTransform = {
         node: selectedNode,
         startPoint: point.clone(),
@@ -136,6 +152,7 @@ export class SelectionManager {
     }
 
     if (selectedNode.type === 'line') {
+      this.snapCandidatesCache = null;
       if (handle === 'start' || handle === 'end' || handle === 'move') {
         this.lineTransformController.startTransform(
           selectedNode as LineNode,
@@ -144,6 +161,7 @@ export class SelectionManager {
         );
       }
     } else {
+      this.snapCandidatesCache = null;
       this.transformController.startTransform(selectedNode, point, handle);
     }
   }
@@ -215,6 +233,7 @@ export class SelectionManager {
     } else {
       return;
     }
+    this.snapCandidatesCache = null;
     this.cancelScheduledPropertiesChanged();
     this.updateSelectionVisuals();
     this.dispatchPropertiesChanged();
@@ -389,6 +408,9 @@ export class SelectionManager {
 
   setObjectSnapEnabled(enabled: boolean) {
     this.objectSnapEnabled = enabled;
+    if (!enabled) {
+      this.snapCandidatesCache = null;
+    }
   }
 
   private getSelectionParent(): Container | null {
@@ -397,6 +419,7 @@ export class SelectionManager {
   }
 
   select(node: BaseNode | null) {
+    this.snapCandidatesCache = null;
     if (!this.isMultiSelect) {
       this.selectedNodes.clear();
     }
@@ -423,6 +446,7 @@ export class SelectionManager {
   }
 
   selectMany(nodes: BaseNode[]) {
+    this.snapCandidatesCache = null;
     this.selectedNodes.clear();
     const selectable = nodes.filter((n) => n && n.visible && !n.locked);
     if (selectable.length) {
@@ -616,6 +640,7 @@ export class SelectionManager {
   }
 
   clear() {
+    this.snapCandidatesCache = null;
     this.selectedNodes.clear();
     this.updateSelectionVisuals();
     this.dispatchSelectionChanged();
@@ -1149,7 +1174,14 @@ export class SelectionManager {
     return { x: nextX, y: nextY, width: nextW, height: nextH };
   }
 
-  private getSnapCandidates(excluded: Set<BaseNode>): Array<{ x: number; y: number; width: number; height: number }> {
+  private getSnapCandidates(excluded: Set<BaseNode>): SnapBounds[] {
+    if (this.snapCandidatesCache) {
+      return this.snapCandidatesCache;
+    }
+    return this.buildSnapCandidates(excluded);
+  }
+
+  private buildSnapCandidates(excluded: Set<BaseNode>): SnapBounds[] {
     const seed = Array.from(this.selectedNodes)[0];
     const parent = seed?.parent as Container | null;
     if (!parent) return [];
