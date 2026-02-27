@@ -10,6 +10,7 @@ import { TextNode } from '../nodes/TextNode';
 import { GroupNode } from '../nodes/GroupNode';
 import { ImageNode } from '../nodes/ImageNode';
 import { FrameNode } from '../nodes/FrameNode';
+import type { ExportPresetStore } from '../export/exportSettings';
 
 export type SerializedNode = {
   id: string;
@@ -35,6 +36,7 @@ type SceneSnapshot = {
 export type SceneDocument = {
   version: 1;
   nodes: SerializedNode[];
+  exportStore?: ExportPresetStore;
 };
 
 export class HistoryManager {

@@ -27,7 +27,7 @@ app.useTool('select');
 - Shift to constrain resize ratio
 - Undo/redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y)
 - Export: PNG/JPG/SVG (all objects or selection)
-- Save/Load: JSON with embedded image data URLs
+- Save/Load: JSON with embedded image data URLs + per-node export settings
 - Rulers with pan/zoom indicators
 
 ## API Highlights
@@ -50,6 +50,19 @@ const svg = await app.exportSVG({
 // Save/Load JSON (embedded images)
 const doc = await app.exportJSON();
 if (doc) await app.importJSON(doc);
+
+// Per-node export presets (persisted in exportJSON/importJSON)
+await app.setNodeExportSettings(frame.id, {
+  presets: [
+    { id: 'png-1x', format: 'png', scale: 1, suffix: '' },
+    { id: 'png-2x', format: 'png', scale: 2, suffix: '@2x' },
+    { id: 'svg', format: 'svg', scale: 1, suffix: '' },
+  ],
+});
+const asset = await app.exportNodeByPreset(frame.id, { presetId: 'png-2x' });
+if (asset?.contentType === 'dataUrl') {
+  // asset.content => data URL
+}
 
 // Access Pixi Application
 const pixiApp = app.getPixiApp();
@@ -275,6 +288,7 @@ exportRaster({
   scope: 'all' | 'selection' | 'frame',
   frameId?: string,        // required when scope === 'frame'
   quality?: number,        // for JPG
+  scale?: number,          // output pixel ratio, e.g. 1/2/3
   padding?: number,        // extra pixels around bounds
   background?: string,     // e.g. '#ffffff'
 });
@@ -284,10 +298,76 @@ exportSVG({
   scope: 'all' | 'selection' | 'frame',
   frameId?: string,        // required when scope === 'frame'
   padding?: number,
+  scale?: number,          // width/height multiplier (viewBox unchanged)
   background?: string,
   imageEmbed?: 'original' | 'display' | 'max',
   imageMaxEdge?: number,
 });
+```
+
+## Node Export Presets (Figma-like)
+
+Presets are stored in a centralized document-level registry (`exportStore`) and linked to nodes by id.
+This keeps lookup/edit fast and avoids recursive node scans.
+
+```ts
+type NodeExportPreset = {
+  id: string;
+  format: 'png' | 'jpg' | 'svg';
+  scale: number;
+  suffix: string; // e.g. '', '@2x'
+  quality?: number; // jpg
+  padding?: number;
+  backgroundMode?: 'auto' | 'transparent' | 'solid';
+  backgroundColor?: string; // used when backgroundMode = 'solid'
+  imageEmbed?: 'original' | 'display' | 'max'; // svg
+  imageMaxEdge?: number; // svg
+};
+```
+
+### Preset APIs
+
+```ts
+// read
+const settings = app.getNodeExportSettings(nodeId);
+
+// replace full settings
+await app.setNodeExportSettings(nodeId, {
+  presets: [
+    { id: 'png-1x', format: 'png', scale: 1, suffix: '' },
+    { id: 'png-2x', format: 'png', scale: 2, suffix: '@2x' },
+    { id: 'svg', format: 'svg', scale: 1, suffix: '' },
+  ],
+});
+
+// insert/update one preset by id
+await app.upsertNodeExportPreset(nodeId, {
+  id: 'png-3x',
+  format: 'png',
+  scale: 3,
+  suffix: '@3x',
+});
+
+// edit a preset entity directly (affects all linked nodes using this preset id)
+await app.updateExportPreset(`${nodeId}:png-2x`, {
+  scale: 2,
+  suffix: '@2x',
+});
+
+// inspect linked nodes before editing shared presets
+const usedBy = app.getExportPresetUsage(`${nodeId}:png-2x`);
+
+// export one node using its preset
+const asset = await app.exportNodeByPreset(nodeId, { presetId: 'png-2x' });
+if (asset) {
+  // asset.filename, asset.mimeType, asset.contentType, asset.content
+}
+
+// export many nodes in one call
+const assets = await app.exportNodesByPreset([
+  { nodeId: frameA, presetId: 'png-1x' },
+  { nodeId: frameB, presetId: 'svg' },
+]);
 ```
 
 ## Export Contract (Revision)
@@ -372,6 +452,35 @@ Import normalization defaults for frame fields:
 - `borderWidth = 1`
 - `clipContent = true`
 
+### Server Persistence Flow
+
+Use `exportJSON()` as the payload to your backend.  
+This payload now includes `exportStore` (preset registry + node links), so loading back with `importJSON()` restores export presets too.
+Legacy documents that previously stored `node.exportSettings` are still accepted and migrated at import time.
+
+```ts
+// save
+const doc = await app.exportJSON();
+await fetch('/api/documents/123', {
+  method: 'PUT',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify(doc),
+});
+
+// load
+const loaded = await fetch('/api/documents/123').then((r) => r.json());
+await app.importJSON(loaded);
+```
+
+### Round-trip (including export presets)
+
+After `exportJSON -> save to server -> load from server -> importJSON`:
+
+- node hierarchy/order must match
+- frame properties must match
+- export registry + node links must match (`id/format/scale/suffix/...`)
+- exporting the same node + preset should produce equivalent output
+
 ### Post-change Checklist
 
 - Verify `all/selection/frame` export for PNG/JPG/SVG.
@@ -385,6 +494,33 @@ Import normalization defaults for frame fields:
 - Group-first hit test: pointer hover/click on a group or any descendant selects the group.
 - Frame-child-first hit test: inside frame, children are preferred over selecting frame body.
 - Layer panel/API can still select specific child ids directly (`selectNodeById` / `selectNodesById`).
+
+## UI Recommendation (Figma-like Export)
+
+Suggested UX in the right sidebar when 1 node is selected:
+
+1. Section title: `Export`
+2. List rows: one row per preset (`PNG 1x`, `PNG 2x`, `SVG`)
+3. Each row editable: `format`, `scale`, `suffix`, advanced options
+4. Row actions: duplicate / delete preset
+5. Primary button: `Export <NodeName>` (export selected preset)
+6. Secondary button: `Export All` (all presets for current node)
+
+Suggested UI behavior:
+
+- Auto-save preset edits immediately via `setNodeExportSettings` / `upsertNodeExportPreset`
+- Keep preset `id` stable; use `id` for persistence and updates (shared ids = shared edits)
+- Show final filename preview from `name + suffix + extension`
+- When exporting multiple selected nodes, call `exportNodesByPreset`
+
+## Implementation Guide
+
+1. Add an `ExportPanel` in your inspector that reads `getNodeExportSettings(nodeId)`.
+2. Bind form fields to preset objects and debounce writes to `setNodeExportSettings`.
+3. On export click, call `exportNodeByPreset(nodeId, { presetId })`.
+4. If `asset.contentType === 'dataUrl'`, download with anchor `href = dataUrl`.
+5. If `asset.contentType === 'text'` (SVG), create `Blob([asset.content], { type: asset.mimeType })`.
+6. For batch export, call `exportNodesByPreset` then zip/download in your app shell.
 
 ## Events
 

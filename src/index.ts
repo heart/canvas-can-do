@@ -1,5 +1,5 @@
 import './ccd.css';
-import { Application, Container, Matrix, Point, RenderTexture, Color } from 'pixi.js';
+import { Application, Container, Matrix, Point, RenderTexture, Color, Text } from 'pixi.js';
 import { PointerController } from './PointerController';
 import type { ShapeCreatedEvent } from './events';
 import { LayerHierarchy } from './core/layers/LayerHierarchy';
@@ -13,6 +13,16 @@ import { HistoryManager } from './core/history/HistoryManager';
 import type { SceneDocument } from './core/history/HistoryManager';
 import { RulerOverlay } from './core/ui/RulerOverlay';
 import {
+  DEFAULT_EXPORT_PRESET_STORE,
+  normalizeExportPresetStore,
+  normalizeNodeExportPreset,
+  normalizeNodeExportSettings,
+  sanitizeExportFileBaseName,
+  type ExportPresetStore,
+  type NodeExportPreset,
+  type NodeExportSettings,
+} from './core/export/exportSettings';
+import {
   DEFAULT_FONT_FAMILY,
   normalizeFontFamily,
   normalizeFontStyle,
@@ -20,6 +30,7 @@ import {
 } from './core/fonts/fontOptions';
 
 export const version = '0.0.0';
+export type { NodeExportPreset, NodeExportSettings } from './core/export/exportSettings';
 
 export type ToolName =
   | 'select'
@@ -85,6 +96,21 @@ export interface LayerMoveValidation {
   reason?: string;
 }
 
+export interface NodeExportAsset {
+  nodeId: string;
+  presetId: string;
+  format: 'png' | 'jpg' | 'svg';
+  filename: string;
+  mimeType: string;
+  content: string;
+  contentType: 'dataUrl' | 'text';
+}
+
+export interface ExportNodePresetOptions {
+  presetId?: string;
+  fallbackToFirstPreset?: boolean;
+}
+
 export const TOOL_CURSOR: Record<ToolName, string | null> = {
   select: null,
   frame: 'crosshair',
@@ -111,15 +137,28 @@ export class CCDApp extends EventTarget {
   pointerController?: PointerController;
   history?: HistoryManager;
   private ruler?: RulerOverlay;
+  private zoomLabel?: Text;
   private shortcutsEnabled = true;
   private objectSnapEnabled = true;
   private isInitialized = false;
+  private exportPresetStore: ExportPresetStore = { ...DEFAULT_EXPORT_PRESET_STORE };
 
   private readonly syncStageHitArea = () => {
     this.app.stage.hitArea = this.app.screen;
   };
   private readonly updateRuler = () => {
     this.ruler?.update();
+  };
+  private readonly updateZoomLabel = () => {
+    if (!this.zoomLabel) return;
+    const percent = Math.round(this.world.scale.x * 100);
+    this.zoomLabel.text = `zoom: ${percent}%`;
+    const margin = 10;
+    const rulerRightInset = 24;
+    this.zoomLabel.position.set(
+      Math.round(this.app.screen.width - this.zoomLabel.width - margin - rulerRightInset),
+      Math.round(this.app.screen.height - this.zoomLabel.height - margin)
+    );
   };
   private readonly onZoomKeyDown = (e: KeyboardEvent) => this.handleZoomKeys(e);
   private readonly onUndoRedoKeyDown = (e: KeyboardEvent) => this.handleUndoRedoKeys(e);
@@ -236,7 +275,20 @@ export class CCDApp extends EventTarget {
       x: this.world.position.x,
       y: this.world.position.y,
     }));
+    this.zoomLabel = new Text({
+      text: '100%',
+      style: {
+        fontSize: 11,
+        fill: 0x111111,
+      },
+    });
+    this.zoomLabel.alpha = 0.85;
+    this.zoomLabel.eventMode = 'none';
+    this.zoomLabel.roundPixels = true;
+    this.uiLayer.addChild(this.zoomLabel);
+    this.updateZoomLabel();
     this.app.ticker.add(this.updateRuler);
+    this.app.ticker.add(this.updateZoomLabel);
 
     // zoom hotkeys
     window.addEventListener('keydown', this.onZoomKeyDown);
@@ -686,6 +738,7 @@ export class CCDApp extends EventTarget {
 
   private async commitAddedNode(node: BaseNode): Promise<AddedNodeResult> {
     this.objectLayer.addChild(node);
+    this.ensureNodeHasExportSettings(node.id);
     this.dispatchLayerHierarchyChanged();
     await this.history?.capture();
 
@@ -718,15 +771,17 @@ export class CCDApp extends EventTarget {
     quality?: number;
     padding?: number;
     background?: string;
+    scale?: number;
   }): Promise<string | null> {
     const bounds = this.getExportBounds(options.scope, options.frameId);
     if (!bounds) return null;
 
     const padding = options.padding ?? 0;
+    const scale = Math.max(0.01, Number.isFinite(Number(options.scale)) ? Number(options.scale) : 1);
     const width = Math.max(1, Math.ceil(bounds.width + padding * 2));
     const height = Math.max(1, Math.ceil(bounds.height + padding * 2));
 
-    const rt = RenderTexture.create({ width, height, resolution: 1 });
+    const rt = RenderTexture.create({ width, height, resolution: scale });
     const transform = new Matrix().translate(-bounds.x + padding, -bounds.y + padding);
 
     const clearColor =
@@ -787,13 +842,17 @@ export class CCDApp extends EventTarget {
     imageEmbed?: 'original' | 'display' | 'max';
     imageMaxEdge?: number;
     background?: string;
+    scale?: number;
   }): Promise<string | null> {
     const bounds = this.getExportBounds(options.scope, options.frameId);
     if (!bounds) return null;
 
     const padding = options.padding ?? 0;
+    const scale = Math.max(0.01, Number.isFinite(Number(options.scale)) ? Number(options.scale) : 1);
     const width = Math.max(1, Math.ceil(bounds.width + padding * 2));
     const height = Math.max(1, Math.ceil(bounds.height + padding * 2));
+    const svgWidth = Math.max(1, Math.ceil(width * scale));
+    const svgHeight = Math.max(1, Math.ceil(height * scale));
     const offsetX = -bounds.x + padding;
     const offsetY = -bounds.y + padding;
 
@@ -830,7 +889,105 @@ export class CCDApp extends EventTarget {
     }
 
     return [
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${width} ${height}">`,
+      `<g transform="translate(${offsetX} ${offsetY})">`,
+      parts.join(''),
+      `</g>`,
+      `</svg>`,
+    ].join('');
+  }
+
+  private async exportRasterNodes(
+    nodes: BaseNode[],
+    options: {
+      type: 'png' | 'jpg';
+      quality?: number;
+      padding?: number;
+      background?: string;
+      scale?: number;
+      boundsOverride?: { x: number; y: number; width: number; height: number };
+    }
+  ): Promise<string | null> {
+    if (!nodes.length) return null;
+    const bounds = options.boundsOverride ?? this.getBoundsFromNodes(nodes);
+    const padding = options.padding ?? 0;
+    const scale = Math.max(0.01, Number.isFinite(Number(options.scale)) ? Number(options.scale) : 1);
+    const width = Math.max(1, Math.ceil(bounds.width + padding * 2));
+    const height = Math.max(1, Math.ceil(bounds.height + padding * 2));
+
+    const rt = RenderTexture.create({ width, height, resolution: scale });
+    const transform = new Matrix().translate(-bounds.x + padding, -bounds.y + padding);
+    const clearColor =
+      options.background !== undefined
+        ? this.toColorNumber(options.background)
+        : options.type === 'jpg'
+          ? 0xffffff
+          : new Color(0x000000).setAlpha(0);
+
+    const restore = this.applySelectionVisibility(nodes);
+    try {
+      this.app.renderer.render({
+        container: this.objectLayer,
+        target: rt,
+        clear: true,
+        clearColor,
+        transform,
+      });
+    } finally {
+      restore();
+    }
+
+    const canvas = this.app.renderer.extract.canvas(rt);
+    if (canvas && canvas.toDataURL) {
+      const mime = options.type === 'jpg' ? 'image/jpeg' : 'image/png';
+      const dataUrl = canvas.toDataURL(mime, options.quality ?? 0.92);
+      rt.destroy(true);
+      return dataUrl;
+    }
+    rt.destroy(true);
+    return null;
+  }
+
+  private async exportSvgNodes(
+    nodes: BaseNode[],
+    options: {
+      padding?: number;
+      imageEmbed?: 'original' | 'display' | 'max';
+      imageMaxEdge?: number;
+      background?: string;
+      scale?: number;
+      boundsOverride?: { x: number; y: number; width: number; height: number };
+    }
+  ): Promise<string | null> {
+    if (!nodes.length) return null;
+    const bounds = options.boundsOverride ?? this.getBoundsFromNodes(nodes);
+    const padding = options.padding ?? 0;
+    const scale = Math.max(0.01, Number.isFinite(Number(options.scale)) ? Number(options.scale) : 1);
+    const width = Math.max(1, Math.ceil(bounds.width + padding * 2));
+    const height = Math.max(1, Math.ceil(bounds.height + padding * 2));
+    const svgWidth = Math.max(1, Math.ceil(width * scale));
+    const svgHeight = Math.max(1, Math.ceil(height * scale));
+    const offsetX = -bounds.x + padding;
+    const offsetY = -bounds.y + padding;
+    const invWorld = this.world.worldTransform.clone().invert();
+    const parts: string[] = [];
+
+    if (options.background) {
+      parts.push(`<rect x="0" y="0" width="${width}" height="${height}" fill="${options.background}"/>`);
+    }
+    for (const node of nodes) {
+      parts.push(
+        await this.nodeToSvg(node, {
+          invWorld,
+          offsetX,
+          offsetY,
+          imageEmbed: options.imageEmbed ?? 'original',
+          imageMaxEdge: options.imageMaxEdge ?? 2048,
+        })
+      );
+    }
+    return [
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${width} ${height}">`,
       `<g transform="translate(${offsetX} ${offsetY})">`,
       parts.join(''),
       `</g>`,
@@ -1185,23 +1342,31 @@ export class CCDApp extends EventTarget {
 
   async undo() {
     await this.history?.undo();
+    this.ensureExportStoreConsistency();
     this.dispatchLayerHierarchyChanged();
     this.pointerController?.clearSelection();
   }
 
   async redo() {
     await this.history?.redo();
+    this.ensureExportStoreConsistency();
     this.dispatchLayerHierarchyChanged();
     this.pointerController?.clearSelection();
   }
 
   async exportJSON(): Promise<SceneDocument | null> {
+    this.ensureExportStoreConsistency();
     const doc = await this.history?.exportDocument();
-    return doc ?? null;
+    if (!doc) return null;
+    return {
+      ...doc,
+      exportStore: this.snapshotExportPresetStore(),
+    };
   }
 
   async importJSON(doc: SceneDocument): Promise<void> {
     await this.history?.importDocument(doc);
+    this.importExportPresetStore(doc);
     this.dispatchLayerHierarchyChanged();
     this.pointerController?.clearSelection();
     this.world.scale.set(1);
@@ -1218,12 +1383,325 @@ export class CCDApp extends EventTarget {
     );
   }
 
+  getNodeExportSettings(nodeId: string): NodeExportSettings | null {
+    const node = this.findNodeById(this.objectLayer, nodeId);
+    if (!node) return null;
+    this.ensureNodeHasExportSettings(nodeId);
+    const linkedPresetIds = this.exportPresetStore.nodePresetIds[nodeId] ?? [];
+    return {
+      presets: linkedPresetIds
+        .map((presetId) => this.exportPresetStore.presets[presetId])
+        .filter((preset): preset is NodeExportPreset => Boolean(preset))
+        .map((preset) => ({ ...preset })),
+    };
+  }
+
+  async setNodeExportSettings(
+    nodeId: string,
+    settings: NodeExportSettings,
+    options: { recordHistory?: boolean } = {}
+  ): Promise<boolean> {
+    const node = this.findNodeById(this.objectLayer, nodeId);
+    if (!node) return false;
+    const normalized = normalizeNodeExportSettings(settings);
+    const presetIds: string[] = [];
+    normalized.presets.forEach((preset, index) => {
+      const scopedId = this.toScopedPresetId(nodeId, preset.id || `preset-${index + 1}`);
+      const normalizedPreset = normalizeNodeExportPreset({ ...preset, id: scopedId }, index);
+      this.exportPresetStore.presets[scopedId] = normalizedPreset;
+      presetIds.push(scopedId);
+    });
+    this.exportPresetStore.nodePresetIds[nodeId] = presetIds;
+    this.pruneOrphanExportPresets();
+    if (options.recordHistory !== false) {
+      await this.history?.capture();
+    }
+    return true;
+  }
+
+  async upsertNodeExportPreset(
+    nodeId: string,
+    preset: Partial<NodeExportPreset> & { id?: string },
+    options: { recordHistory?: boolean } = {}
+  ): Promise<NodeExportPreset | null> {
+    const node = this.findNodeById(this.objectLayer, nodeId);
+    if (!node) return null;
+    this.ensureNodeHasExportSettings(nodeId);
+
+    const existing = this.exportPresetStore.nodePresetIds[nodeId] ?? [];
+    const requestedId = typeof preset.id === 'string' && preset.id.trim() ? preset.id.trim() : '';
+    const resolvedId = requestedId
+      ? this.resolveNodePresetId(nodeId, requestedId)
+      : this.toScopedPresetId(nodeId, `preset-${existing.length + 1}`);
+    const nextPreset = normalizeNodeExportPreset(
+      {
+        ...preset,
+        id: resolvedId,
+      },
+      existing.length
+    );
+    this.exportPresetStore.presets[resolvedId] = nextPreset;
+    if (!existing.includes(resolvedId)) {
+      this.exportPresetStore.nodePresetIds[nodeId] = [...existing, resolvedId];
+    }
+
+    if (options.recordHistory !== false) {
+      await this.history?.capture();
+    }
+    return { ...nextPreset };
+  }
+
+  async exportNodeByPreset(
+    nodeId: string,
+    options: ExportNodePresetOptions = {}
+  ): Promise<NodeExportAsset | null> {
+    const node = this.findNodeById(this.objectLayer, nodeId);
+    if (!node) return null;
+    const settings = this.getNodeExportSettings(nodeId);
+    if (!settings) return null;
+    const fallbackToFirstPreset = options.fallbackToFirstPreset !== false;
+    let preset = options.presetId ? this.findPresetForNode(nodeId, settings.presets, options.presetId) : settings.presets[0];
+    if (!preset && fallbackToFirstPreset) {
+      preset = settings.presets[0];
+    }
+    if (!preset) return null;
+
+    const normalizedPreset = normalizeNodeExportPreset(preset);
+    const isFrame = node instanceof FrameNode;
+    const bounds = isFrame ? this.getFrameBounds(node) : this.getBoundsFromNodes([node]);
+
+    const baseName = sanitizeExportFileBaseName(node.name || node.id || 'export');
+    const extension = normalizedPreset.format;
+    const filename = `${baseName}${normalizedPreset.suffix || ''}.${extension}`;
+
+    let frameRestore: (() => void) | null = null;
+    if (isFrame && normalizedPreset.backgroundMode !== 'auto') {
+      const frame = node as FrameNode;
+      const previous = frame.backgroundColor;
+      if (normalizedPreset.backgroundMode === 'transparent') {
+        frame.setBackgroundColor(null);
+      } else {
+        frame.setBackgroundColor(normalizedPreset.backgroundColor ?? '#ffffff');
+      }
+      frameRestore = () => frame.setBackgroundColor(previous);
+    }
+
+    try {
+      if (normalizedPreset.format === 'svg') {
+        const svg = await this.exportSvgNodes([node], {
+          padding: normalizedPreset.padding,
+          imageEmbed: normalizedPreset.imageEmbed,
+          imageMaxEdge: normalizedPreset.imageMaxEdge,
+          background:
+            normalizedPreset.backgroundMode === 'solid'
+              ? normalizedPreset.backgroundColor ?? '#ffffff'
+              : undefined,
+          scale: normalizedPreset.scale,
+          boundsOverride: bounds,
+        });
+        if (!svg) return null;
+        return {
+          nodeId: node.id,
+          presetId: normalizedPreset.id,
+          format: 'svg',
+          filename,
+          mimeType: 'image/svg+xml',
+          content: svg,
+          contentType: 'text',
+        };
+      }
+
+      const background =
+        normalizedPreset.backgroundMode === 'solid'
+          ? normalizedPreset.backgroundColor ?? '#ffffff'
+          : undefined;
+      const raster = await this.exportRasterNodes([node], {
+        type: normalizedPreset.format,
+        quality: normalizedPreset.quality,
+        padding: normalizedPreset.padding,
+        background,
+        scale: normalizedPreset.scale,
+        boundsOverride: bounds,
+      });
+      if (!raster) return null;
+      return {
+        nodeId: node.id,
+        presetId: normalizedPreset.id,
+        format: normalizedPreset.format,
+        filename,
+        mimeType: normalizedPreset.format === 'jpg' ? 'image/jpeg' : 'image/png',
+        content: raster,
+        contentType: 'dataUrl',
+      };
+    } finally {
+      frameRestore?.();
+    }
+  }
+
+  async exportNodesByPreset(
+    requests: Array<{ nodeId: string; presetId?: string }>,
+    options: ExportNodePresetOptions = {}
+  ): Promise<NodeExportAsset[]> {
+    const results: NodeExportAsset[] = [];
+    for (const request of requests) {
+      const asset = await this.exportNodeByPreset(request.nodeId, {
+        presetId: request.presetId ?? options.presetId,
+        fallbackToFirstPreset: options.fallbackToFirstPreset,
+      });
+      if (asset) {
+        results.push(asset);
+      }
+    }
+    return results;
+  }
+
+  private snapshotExportPresetStore(): ExportPresetStore {
+    const presets: Record<string, NodeExportPreset> = {};
+    Object.entries(this.exportPresetStore.presets).forEach(([presetId, preset]) => {
+      presets[presetId] = { ...preset };
+    });
+    const nodePresetIds: Record<string, string[]> = {};
+    Object.entries(this.exportPresetStore.nodePresetIds).forEach(([nodeId, presetIds]) => {
+      nodePresetIds[nodeId] = [...presetIds];
+    });
+    return { presets, nodePresetIds };
+  }
+
+  private importExportPresetStore(doc: SceneDocument): void {
+    const normalizedStore = normalizeExportPresetStore((doc as any).exportStore);
+    const hasStoreData =
+      Object.keys(normalizedStore.presets).length > 0 ||
+      Object.keys(normalizedStore.nodePresetIds).length > 0;
+    if (hasStoreData) {
+      this.exportPresetStore = normalizedStore;
+    } else {
+      this.exportPresetStore = this.collectLegacyExportStoreFromNodes((doc as any).nodes ?? []);
+    }
+    this.ensureExportStoreConsistency();
+  }
+
+  private collectLegacyExportStoreFromNodes(serializedNodes: any[]): ExportPresetStore {
+    const presets: Record<string, NodeExportPreset> = {};
+    const nodePresetIds: Record<string, string[]> = {};
+
+    const walk = (node: any) => {
+      if (!node || typeof node !== 'object' || typeof node.id !== 'string') return;
+      const rawPresets = Array.isArray(node.exportSettings?.presets) ? node.exportSettings.presets : [];
+      if (rawPresets.length) {
+        nodePresetIds[node.id] = rawPresets.map((rawPreset: any, index: number) => {
+          const scopedId = this.toScopedPresetId(node.id, String(rawPreset?.id ?? `preset-${index + 1}`));
+          presets[scopedId] = normalizeNodeExportPreset({ ...rawPreset, id: scopedId }, index);
+          return scopedId;
+        });
+      }
+      const children = Array.isArray(node.children) ? node.children : [];
+      children.forEach(walk);
+    };
+    serializedNodes.forEach(walk);
+    return { presets, nodePresetIds };
+  }
+
+  private ensureExportStoreConsistency(): void {
+    const existingNodeIds = new Set(this.getAllBaseNodes(this.objectLayer).map((node) => node.id));
+    const validNodePresetIds: Record<string, string[]> = {};
+    Object.entries(this.exportPresetStore.nodePresetIds).forEach(([nodeId, presetIds]) => {
+      if (!existingNodeIds.has(nodeId)) return;
+      const validIds = presetIds.filter((presetId, index, arr) => {
+        return arr.indexOf(presetId) === index && Boolean(this.exportPresetStore.presets[presetId]);
+      });
+      if (validIds.length) {
+        validNodePresetIds[nodeId] = validIds;
+      }
+    });
+    this.exportPresetStore.nodePresetIds = validNodePresetIds;
+    this.pruneOrphanExportPresets();
+    existingNodeIds.forEach((nodeId) => this.ensureNodeHasExportSettings(nodeId));
+  }
+
+  private ensureNodeHasExportSettings(nodeId: string): void {
+    const list = this.exportPresetStore.nodePresetIds[nodeId];
+    if (Array.isArray(list) && list.length) return;
+    const defaultScopedId = this.toScopedPresetId(nodeId, 'png-1x');
+    this.exportPresetStore.presets[defaultScopedId] = normalizeNodeExportPreset({
+      id: defaultScopedId,
+      format: 'png',
+      scale: 1,
+      suffix: '',
+      padding: 0,
+      backgroundMode: 'auto',
+      imageEmbed: 'original',
+      imageMaxEdge: 2048,
+    });
+    this.exportPresetStore.nodePresetIds[nodeId] = [defaultScopedId];
+  }
+
+  private pruneOrphanExportPresets(): void {
+    const used = new Set<string>();
+    Object.values(this.exportPresetStore.nodePresetIds).forEach((ids) => {
+      ids.forEach((id) => used.add(id));
+    });
+    Object.keys(this.exportPresetStore.presets).forEach((presetId) => {
+      if (!used.has(presetId)) {
+        delete this.exportPresetStore.presets[presetId];
+      }
+    });
+  }
+
+  private toScopedPresetId(nodeId: string, presetId: string): string {
+    const normalized = String(presetId || 'preset').trim() || 'preset';
+    const raw = normalized.startsWith(`${nodeId}:`) ? normalized.slice(nodeId.length + 1) : normalized;
+    return `${nodeId}:${raw}`;
+  }
+
+  private resolveNodePresetId(nodeId: string, requestedId: string): string {
+    const direct = this.exportPresetStore.presets[requestedId];
+    if (direct) {
+      const linked = this.exportPresetStore.nodePresetIds[nodeId] ?? [];
+      if (linked.includes(requestedId)) return requestedId;
+    }
+    const scoped = this.toScopedPresetId(nodeId, requestedId);
+    return scoped;
+  }
+
+  private findPresetForNode(
+    nodeId: string,
+    presets: NodeExportPreset[],
+    requestedId: string
+  ): NodeExportPreset | undefined {
+    return (
+      presets.find((item) => item.id === requestedId) ??
+      presets.find((item) => item.id === this.toScopedPresetId(nodeId, requestedId))
+    );
+  }
+
+  async updateExportPreset(
+    presetId: string,
+    patch: Partial<NodeExportPreset>,
+    options: { recordHistory?: boolean } = {}
+  ): Promise<NodeExportPreset | null> {
+    const current = this.exportPresetStore.presets[presetId];
+    if (!current) return null;
+    const normalized = normalizeNodeExportPreset({ ...current, ...patch, id: presetId });
+    this.exportPresetStore.presets[presetId] = normalized;
+    if (options.recordHistory !== false) {
+      await this.history?.capture();
+    }
+    return { ...normalized };
+  }
+
+  getExportPresetUsage(presetId: string): string[] {
+    return Object.entries(this.exportPresetStore.nodePresetIds)
+      .filter(([, ids]) => ids.includes(presetId))
+      .map(([nodeId]) => nodeId);
+  }
+
   hasDocumentContent(): boolean {
     return this.history?.hasContent() ?? false;
   }
 
   async clearDocument(): Promise<void> {
     await this.history?.clearDocument();
+    this.exportPresetStore = { ...DEFAULT_EXPORT_PRESET_STORE };
     this.dispatchLayerHierarchyChanged();
     this.pointerController?.clearSelection();
   }
@@ -1833,6 +2311,7 @@ export class CCDApp extends EventTarget {
   destroy() {
     this.app.ticker.remove(this.syncStageHitArea);
     this.app.ticker.remove(this.updateRuler);
+    this.app.ticker.remove(this.updateZoomLabel);
 
     window.removeEventListener('keydown', this.onZoomKeyDown);
     window.removeEventListener('keydown', this.onUndoRedoKeyDown);
@@ -1874,6 +2353,7 @@ export class CCDApp extends EventTarget {
     this.pointerControllerKeyUpHandler = undefined;
     this.pointerController = undefined;
     this.ruler = undefined;
+    this.zoomLabel = undefined;
     this.history = undefined;
     this.host = undefined;
     this.isInitialized = false;
