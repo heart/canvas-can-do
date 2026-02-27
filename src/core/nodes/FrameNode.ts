@@ -49,7 +49,7 @@ export class FrameNode extends BaseNode {
     this._backgroundColor =
       options.backgroundColor !== undefined ? options.backgroundColor : (options.background ?? '#ffffff');
     this._borderColor = options.borderColor ?? '#A0A0A0';
-    this._borderWidth = Math.max(0, options.borderWidth ?? 1);
+    this._borderWidth = this.normalizeBorderWidth(options.borderWidth ?? 1);
     this._clipContent = options.clipContent ?? true;
 
     this.backgroundGraphics = new Graphics();
@@ -146,9 +146,13 @@ export class FrameNode extends BaseNode {
   }
 
   setBorderWidth(borderWidth: number): this {
-    this._borderWidth = Math.max(0, Number.isFinite(borderWidth) ? borderWidth : 0);
+    this._borderWidth = this.normalizeBorderWidth(borderWidth);
     this.redraw();
     return this;
+  }
+
+  private normalizeBorderWidth(value: number): number {
+    return Math.max(0, Math.round(Number.isFinite(value) ? value : 0));
   }
 
   // legacy aliases
@@ -195,7 +199,7 @@ export class FrameNode extends BaseNode {
       {
         name: 'Border Width',
         key: 'borderWidth',
-        type: 'float',
+        type: 'int',
         value: this.borderWidth,
         desc: 'Frame border width',
         min: 0,

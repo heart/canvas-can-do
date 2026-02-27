@@ -73,7 +73,7 @@ export class TextNode extends BaseNode {
 
   setStyle(style: Partial<Style>): this {
     this.style = { ...this.style, ...style };
-    if (style.fill) {
+    if (style.fill !== undefined) {
       const fillColor =
         typeof style.fill === 'string'
           ? parseInt(style.fill.replace('#', ''), 16)
@@ -92,6 +92,8 @@ export class TextNode extends BaseNode {
     if (style.fontStyle !== undefined) {
       this.textSprite.style.fontStyle = style.fontStyle;
     }
+    this._width = this.textSprite.width;
+    this._height = this.textSprite.height;
     return this;
   }
 

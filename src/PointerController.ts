@@ -14,6 +14,7 @@ import { LineNode } from './core/nodes/LineNode';
 import { StarNode } from './core/nodes/StarNode';
 import { TextNode } from './core/nodes/TextNode';
 import { FrameNode } from './core/nodes/FrameNode';
+import { GroupNode } from './core/nodes/GroupNode';
 import { Application } from 'pixi.js';
 
 export class PointerController {
@@ -167,11 +168,6 @@ export class PointerController {
       }
     }
 
-    if (e.key === ' ' && !e.repeat) {
-      this.isPanning = true;
-      this.setCursor('grab');
-    }
-
     // Copy (Ctrl/Cmd + C)
     if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
@@ -205,10 +201,7 @@ export class PointerController {
       e.preventDefault();
       const group = this.selectionManager.createGroup();
       if (group) {
-        // Ensure group is on object layer; children are already reparented
-        if (!this.objectLayer.children.includes(group)) {
-          this.objectLayer.addChild(group);
-        }
+        this.onLayerChanged();
         this.onHistoryCapture?.();
       }
     }
@@ -217,13 +210,8 @@ export class PointerController {
     if (e.key === 'g' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
       e.preventDefault();
       const ungrouped = this.selectionManager.ungroupSelected();
-      // Re-add ungrouped children to object layer
-      ungrouped.forEach((child) => {
-        if (!this.objectLayer.children.includes(child)) {
-          this.objectLayer.addChild(child);
-        }
-      });
       if (ungrouped.length) {
+        this.onLayerChanged();
         this.onHistoryCapture?.();
       }
     }
@@ -311,6 +299,9 @@ export class PointerController {
 
     // Update preview based on tool
     switch (tool) {
+      case 'frame':
+        this.preview = new PreviewRect(this.previewLayer);
+        break;
       case 'rectangle':
         this.preview = new PreviewRect(this.previewLayer);
         break;
@@ -348,7 +339,7 @@ export class PointerController {
         this.activeTransformHandle = handle;
         this.transformStartClient = new Point(e.clientX, e.clientY);
         this.transformMoved = false;
-        this.selectionManager.startTransform(point, handle);
+        this.selectionManager.startTransform(globalPoint, handle);
         return;
       }
 
@@ -362,18 +353,20 @@ export class PointerController {
         this.activeTransformHandle = 'move';
         this.transformStartClient = new Point(e.clientX, e.clientY);
         this.transformMoved = false;
-        this.selectionManager.startTransform(point, 'move');
+        this.selectionManager.startTransform(globalPoint, 'move');
       } else {
         this.activeTransformHandle = null;
         this.transformStartClient = null;
         this.transformMoved = false;
       }
     } else if (
-      ['rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
+      ['frame', 'rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
     ) {
       const drawingTargetFrame = this.findTopFrameAtPoint(globalPoint);
       this.drawingParentFrameId =
-        drawingTargetFrame && !drawingTargetFrame.locked ? drawingTargetFrame.id : null;
+        this.activeTool !== 'frame' && drawingTargetFrame && !drawingTargetFrame.locked
+          ? drawingTargetFrame.id
+          : null;
       this.preview.begin(this.snapWorldPoint(point));
     }
   }
@@ -417,7 +410,7 @@ export class PointerController {
 
     if (this.activeTool === 'select') {
       // Update transform if in progress
-      this.selectionManager.updateTransform(point);
+      this.selectionManager.updateTransform(globalPoint);
       if (this.transformStartClient) {
         const dx = e.clientX - this.transformStartClient.x;
         const dy = e.clientY - this.transformStartClient.y;
@@ -437,7 +430,7 @@ export class PointerController {
 
       this.updateHover((hitObject as BaseNode) || null, true);
     } else if (
-      ['rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
+      ['frame', 'rectangle', 'circle', 'ellipse', 'line', 'star', 'text'].includes(this.activeTool)
     ) {
       this.preview.update(this.snapWorldPoint(point));
     }
@@ -496,6 +489,35 @@ export class PointerController {
     };
 
     switch (this.activeTool) {
+      case 'frame':
+        let frameWidth = rect.w;
+        let frameHeight = rect.h;
+        let frameX = rect.x;
+        let frameY = rect.y;
+
+        if (e.shiftKey) {
+          const frameSize = Math.max(rect.w, rect.h);
+          if (rect.w < rect.h) {
+            if (this.preview.last.x < this.preview.start.x) frameX = this.preview.start.x - frameSize;
+            frameWidth = frameSize;
+          } else {
+            if (this.preview.last.y < this.preview.start.y) frameY = this.preview.start.y - frameSize;
+            frameHeight = frameSize;
+          }
+        }
+
+        shape = new FrameNode({
+          width: Math.max(1, Math.round(frameWidth)),
+          height: Math.max(1, Math.round(frameHeight)),
+          x: Math.round(frameX),
+          y: Math.round(frameY),
+          backgroundColor: '#ffffff',
+          borderColor: '#A0A0A0',
+          borderWidth: 1,
+          clipContent: true,
+          style: { opacity: 1 },
+        });
+        break;
       case 'rectangle':
         let rectWidth = rect.w;
         let rectHeight = rect.h;
@@ -594,7 +616,7 @@ export class PointerController {
 
     if (shape) {
       const event = new CustomEvent('shape:created', {
-        detail: { shape, parentId: this.drawingParentFrameId },
+        detail: { shape, parentId: this.activeTool === 'frame' ? null : this.drawingParentFrameId },
       });
       this.dispatchEvent(event);
     }
@@ -630,15 +652,7 @@ export class PointerController {
 
   private toWorldPoint(e: PointerEvent): Point {
     if (!this.world || !this.app) return new Point(e.offsetX, e.offsetY);
-
-    // Convert client coords to renderer (stage) coords
-    const canvas = this.app.renderer.canvas as unknown as HTMLCanvasElement;
-    const rect = canvas.getBoundingClientRect();
-    const screenX = e.clientX - rect.left;
-    const screenY = e.clientY - rect.top;
-
-    const globalPoint = new Point(screenX, screenY);
-    // Map through world transform to local space (handles scale/position)
+    const globalPoint = this.toGlobalPoint(e);
     return this.world.toLocal(globalPoint);
   }
 
@@ -718,7 +732,7 @@ export class PointerController {
     };
   }
 
-  private findHitObject(globalPoint: Point): Container | undefined {
+  private findHitObject(globalPoint: Point): BaseNode | undefined {
     const tolerance = 10;
     const findInContainer = (container: Container): BaseNode | undefined => {
       for (let i = container.children.length - 1; i >= 0; i--) {
@@ -726,45 +740,27 @@ export class PointerController {
         if (!(child instanceof BaseNode)) continue;
         if (!child.visible || child.locked) continue;
 
-        const nested = findInContainer(child);
-        if (nested) return nested;
-
-        if (child instanceof FrameNode) {
-          continue;
-        }
-
-        if (child.type === 'line') {
-          const line = child as LineNode;
-          const startLocal = new Point(line.x + line.startX, line.y + line.startY);
-          const endLocal = new Point(line.x + line.endX, line.y + line.endY);
-          const start = line.parent ? line.parent.toGlobal(startLocal) : startLocal;
-          const end = line.parent ? line.parent.toGlobal(endLocal) : endLocal;
-          const len = Math.hypot(end.x - start.x, end.y - start.y) || 1;
-          const dist =
-            Math.abs(
-              (end.y - start.y) * globalPoint.x -
-                (end.x - start.x) * globalPoint.y +
-                end.x * start.y -
-                end.y * start.x
-            ) / len;
-          const minX = Math.min(start.x, end.x) - tolerance;
-          const maxX = Math.max(start.x, end.x) + tolerance;
-          const minY = Math.min(start.y, end.y) - tolerance;
-          const maxY = Math.max(start.y, end.y) + tolerance;
-          if (
-            dist <= tolerance &&
-            globalPoint.x >= minX &&
-            globalPoint.x <= maxX &&
-            globalPoint.y >= minY &&
-            globalPoint.y <= maxY
-          ) {
+        // Group-first selection: selecting any descendant/body promotes to the group itself.
+        if (child instanceof GroupNode) {
+          if (this.isNodeHit(child, globalPoint, tolerance)) {
             return child;
           }
           continue;
         }
 
-        const bounds = child.getBounds();
-        if (bounds.containsPoint(globalPoint.x, globalPoint.y)) {
+        // Frame-child-first selection: descendants are preferred over frame body.
+        if (child instanceof FrameNode) {
+          const nested = findInContainer(child);
+          if (nested) return nested;
+          continue;
+        }
+
+        if (child.children.length) {
+          const nested = findInContainer(child);
+          if (nested) return nested;
+        }
+
+        if (this.isNodeHit(child, globalPoint, tolerance)) {
           return child;
         }
       }
@@ -772,6 +768,37 @@ export class PointerController {
     };
 
     return findInContainer(this.objectLayer);
+  }
+
+  private isNodeHit(node: BaseNode, globalPoint: Point, tolerance: number): boolean {
+    if (node.type === 'line') {
+      const line = node as LineNode;
+      const startLocal = new Point(line.x + line.startX, line.y + line.startY);
+      const endLocal = new Point(line.x + line.endX, line.y + line.endY);
+      const start = line.parent ? line.parent.toGlobal(startLocal) : startLocal;
+      const end = line.parent ? line.parent.toGlobal(endLocal) : endLocal;
+      const len = Math.hypot(end.x - start.x, end.y - start.y) || 1;
+      const dist =
+        Math.abs(
+          (end.y - start.y) * globalPoint.x -
+            (end.x - start.x) * globalPoint.y +
+            end.x * start.y -
+            end.y * start.x
+        ) / len;
+      const minX = Math.min(start.x, end.x) - tolerance;
+      const maxX = Math.max(start.x, end.x) + tolerance;
+      const minY = Math.min(start.y, end.y) - tolerance;
+      const maxY = Math.max(start.y, end.y) + tolerance;
+      return (
+        dist <= tolerance &&
+        globalPoint.x >= minX &&
+        globalPoint.x <= maxX &&
+        globalPoint.y >= minY &&
+        globalPoint.y <= maxY
+      );
+    }
+    const bounds = node.getBounds();
+    return bounds.containsPoint(globalPoint.x, globalPoint.y);
   }
 
   private updateFrameLabels(pointerGlobal?: Point) {
@@ -924,6 +951,7 @@ export class PointerController {
     if (selected.length !== 1) return null;
     const node = selected[0];
     if (!node || node instanceof FrameNode) return null;
+    if (this.isGroupManagedNode(node)) return null;
     if (frame === node.parent) return null;
     if (frame.locked || !frame.visible) return null;
     if (this.isAncestor(node, frame)) return null;
@@ -936,6 +964,7 @@ export class PointerController {
 
     const node = selected[0];
     if (!node || node instanceof FrameNode) return false;
+    if (this.isGroupManagedNode(node)) return false;
 
     const targetFrame = this.findTopFrameAtPoint(globalPoint);
     if (!targetFrame) return false;
@@ -969,6 +998,18 @@ export class PointerController {
 
     this.selectionManager.selectMany([node]);
     return true;
+  }
+
+  // Nodes that are groups themselves or descendants of any group should not auto-reparent on drag.
+  private isGroupManagedNode(node: BaseNode): boolean {
+    if (node instanceof GroupNode) return true;
+    let current = node.parent;
+    while (current) {
+      if (current instanceof GroupNode) return true;
+      if (current === this.objectLayer) break;
+      current = current.parent;
+    }
+    return false;
   }
 
   private findTopFrameAtPoint(globalPoint: Point): FrameNode | null {

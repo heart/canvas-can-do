@@ -23,6 +23,7 @@ export const version = '0.0.0';
 
 export type ToolName =
   | 'select'
+  | 'frame'
   | 'rectangle'
   | 'circle'
   | 'text'
@@ -86,6 +87,7 @@ export interface LayerMoveValidation {
 
 export const TOOL_CURSOR: Record<ToolName, string | null> = {
   select: null,
+  frame: 'crosshair',
   rectangle: 'crosshair',
   circle: 'crosshair',
   ellipse: 'crosshair',
@@ -353,6 +355,10 @@ export class CCDApp extends EventTarget {
       case 'r':
         e.preventDefault();
         this.useTool('rectangle');
+        break;
+      case 'f':
+        e.preventDefault();
+        this.useTool('frame');
         break;
       case 'l':
         e.preventDefault();
@@ -1701,6 +1707,12 @@ export class CCDApp extends EventTarget {
     }
     if (sourceNodes.some((node) => node.locked)) {
       return { ok: false, reason: 'Locked nodes cannot be moved.' };
+    }
+    if (
+      sourceNodes.some((node) => node instanceof FrameNode) &&
+      destinationParent !== this.objectLayer
+    ) {
+      return { ok: false, reason: 'Frames must stay at the root level.' };
     }
     if (sourceNodes.some((node) => this.isAncestorNode(node, destinationParent))) {
       return { ok: false, reason: 'Cannot move a node into its own descendant.' };

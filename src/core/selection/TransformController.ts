@@ -1,4 +1,4 @@
-import { Point } from 'pixi.js';
+import { Container, Point } from 'pixi.js';
 import type { BaseNode } from '../nodes/BaseNode';
 
 type TransformMode = 'none' | 'move' | 'resize' | 'rotate';
@@ -12,6 +12,7 @@ export class TransformController {
     width: number;
     height: number;
     rotation: number;
+    parent: Container | null;
   } | null = null;
   private activeNode: BaseNode | null = null;
   private activeHandle: string | null = null;
@@ -29,7 +30,8 @@ export class TransformController {
       y: node.y,
       width: node.width,
       height: node.height,
-      rotation: node.rotation
+      rotation: node.rotation,
+      parent: (node.parent as Container | null) ?? null,
     };
 
     // Determine transform mode based on handle
@@ -45,8 +47,10 @@ export class TransformController {
   updateTransform(point: Point, constrainRatio = false) {
     if (!this.activeNode || !this.startPoint || !this.startState) return;
 
-    const dx = point.x - this.startPoint.x;
-    const dy = point.y - this.startPoint.y;
+    const startPoint = this.toParentPoint(this.startPoint, this.startState.parent);
+    const currentPoint = this.toParentPoint(point, this.startState.parent);
+    const dx = currentPoint.x - startPoint.x;
+    const dy = currentPoint.y - startPoint.y;
 
     switch (this.mode) {
       case 'move':
@@ -68,12 +72,12 @@ export class TransformController {
         const center = new Point(centerX, centerY);
         
         const startAngle = Math.atan2(
-          this.startPoint.y - center.y,
-          this.startPoint.x - center.x
+          startPoint.y - center.y,
+          startPoint.x - center.x
         );
         const currentAngle = Math.atan2(
-          point.y - center.y,
-          point.x - center.x
+          currentPoint.y - center.y,
+          currentPoint.x - center.x
         );
         
         const newRotation = this.startState.rotation + (currentAngle - startAngle);
@@ -180,5 +184,10 @@ export class TransformController {
     this.startState = null;
     this.activeNode = null;
     this.activeHandle = null;
+  }
+
+  private toParentPoint(point: Point, parent: Container | null): Point {
+    if (!parent) return point.clone();
+    return parent.toLocal(point);
   }
 }

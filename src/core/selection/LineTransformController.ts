@@ -1,4 +1,4 @@
-import { Point } from 'pixi.js';
+import { Container, Point } from 'pixi.js';
 import type { LineNode } from '../nodes/LineNode';
 
 export class LineTransformController {
@@ -12,6 +12,9 @@ export class LineTransformController {
     endY: number;
     x: number;
     y: number;
+    parent: Container | null;
+    startWorld: Point;
+    endWorld: Point;
   } | null = null;
 
   startTransform(node: LineNode, point: Point, handle: 'start' | 'end' | 'move') {
@@ -25,72 +28,59 @@ export class LineTransformController {
       endY: node.endY,
       x: node.x,
       y: node.y,
+      parent: (node.parent as Container | null) ?? null,
+      startWorld: node.parent
+        ? node.parent.toGlobal(new Point(node.x + node.startX, node.y + node.startY))
+        : new Point(node.x + node.startX, node.y + node.startY),
+      endWorld: node.parent
+        ? node.parent.toGlobal(new Point(node.x + node.endX, node.y + node.endY))
+        : new Point(node.x + node.endX, node.y + node.endY),
     };
   }
 
   updateTransform(point: Point, shiftKey = false) {
     if (!this.activeNode || !this.startPoint || !this.startState) return;
 
-    const dx = point.x - this.startPoint.x;
-    const dy = point.y - this.startPoint.y;
+    const startPoint = this.startPoint;
+    const dx = point.x - startPoint.x;
+    const dy = point.y - startPoint.y;
 
     if (this.activeHandle === 'start') {
-      // Move the start point by updating position and keeping end point fixed in world space
-      const worldEndX = this.startState.x + this.startState.endX;
-      const worldEndY = this.startState.y + this.startState.endY;
-      let nextStartX = this.startState.x + dx;
-      let nextStartY = this.startState.y + dy;
+      const fixedEnd = this.startState.endWorld;
+      let nextStart = new Point(this.startState.startWorld.x + dx, this.startState.startWorld.y + dy);
 
       if (shiftKey) {
-        const snapped = this.snapPointTo45(worldEndX, worldEndY, nextStartX, nextStartY);
-        nextStartX = snapped.x;
-        nextStartY = snapped.y;
+        const snapped = this.snapPointTo45(fixedEnd.x, fixedEnd.y, nextStart.x, nextStart.y);
+        nextStart = new Point(snapped.x, snapped.y);
       }
 
-      this.activeNode.position.set(Math.round(nextStartX), Math.round(nextStartY));
-
-      // Update end point relative to new position
-      const snappedStartX = Math.round(nextStartX);
-      const snappedStartY = Math.round(nextStartY);
-      this.activeNode.endX = Math.round(worldEndX) - snappedStartX;
-      this.activeNode.endY = Math.round(worldEndY) - snappedStartY;
-
-      // Start point is always at origin relative to position
-      this.activeNode.startX = 0;
-      this.activeNode.startY = 0;
-
-      // Redraw the line
+      this.applyWorldEndpoints(nextStart, fixedEnd);
       this.activeNode.refresh();
     } else if (this.activeHandle === 'end') {
-      // Simply update end point relative to current position
-      const worldStartX = this.startState.x + this.startState.startX;
-      const worldStartY = this.startState.y + this.startState.startY;
-      let nextEndX = this.startState.x + this.startState.endX + dx;
-      let nextEndY = this.startState.y + this.startState.endY + dy;
+      const fixedStart = this.startState.startWorld;
+      let nextEnd = new Point(this.startState.endWorld.x + dx, this.startState.endWorld.y + dy);
 
       if (shiftKey) {
-        const snapped = this.snapPointTo45(worldStartX, worldStartY, nextEndX, nextEndY);
-        nextEndX = snapped.x;
-        nextEndY = snapped.y;
+        const snapped = this.snapPointTo45(fixedStart.x, fixedStart.y, nextEnd.x, nextEnd.y);
+        nextEnd = new Point(snapped.x, snapped.y);
       }
 
-      const snappedEndX = Math.round(nextEndX);
-      const snappedEndY = Math.round(nextEndY);
-      const snappedStartX = Math.round(this.startState.x);
-      const snappedStartY = Math.round(this.startState.y);
-      this.activeNode.position.set(snappedStartX, snappedStartY);
-      this.activeNode.endX = snappedEndX - snappedStartX;
-      this.activeNode.endY = snappedEndY - snappedStartY;
-
-      // Redraw the line
+      this.applyWorldEndpoints(fixedStart, nextEnd);
       this.activeNode.refresh();
     } else if (this.activeHandle === 'move') {
-      // Move the entire line by updating position only
+      const parent = this.startState.parent;
+      let localDx = dx;
+      let localDy = dy;
+      if (parent) {
+        const startLocal = parent.toLocal(this.startPoint);
+        const currentLocal = parent.toLocal(point);
+        localDx = currentLocal.x - startLocal.x;
+        localDy = currentLocal.y - startLocal.y;
+      }
       this.activeNode.position.set(
-        Math.round(this.startState.x + dx),
-        Math.round(this.startState.y + dy)
+        Math.round(this.startState.x + localDx),
+        Math.round(this.startState.y + localDy)
       );
-      // Preserve endpoint offsets relative to position
       this.activeNode.startX = this.startState.startX;
       this.activeNode.startY = this.startState.startY;
       this.activeNode.endX = this.startState.endX;
@@ -118,5 +108,22 @@ export class LineTransformController {
       x: fixedX + Math.cos(snapped) * length,
       y: fixedY + Math.sin(snapped) * length,
     };
+  }
+
+  private applyWorldEndpoints(startWorld: Point, endWorld: Point) {
+    if (!this.activeNode || !this.startState) return;
+    const parent = this.startState.parent;
+    const startLocal = parent ? parent.toLocal(startWorld) : startWorld;
+    const endLocal = parent ? parent.toLocal(endWorld) : endWorld;
+    const sx = Math.round(startLocal.x);
+    const sy = Math.round(startLocal.y);
+    const ex = Math.round(endLocal.x);
+    const ey = Math.round(endLocal.y);
+
+    this.activeNode.position.set(sx, sy);
+    this.activeNode.startX = 0;
+    this.activeNode.startY = 0;
+    this.activeNode.endX = ex - sx;
+    this.activeNode.endY = ey - sy;
   }
 }

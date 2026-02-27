@@ -180,7 +180,7 @@ export class HistoryManager {
           ? this.toNullableColor(data.backgroundColor, '#ffffff')
           : (legacyBackground ?? '#ffffff');
       const borderColor = this.toColor(data.borderColor, '#A0A0A0');
-      const borderWidth = Math.max(0, this.toFiniteNumber(data.borderWidth, 1));
+      const borderWidth = Math.max(0, Math.round(this.toFiniteNumber(data.borderWidth, 1)));
       const clipContent = this.toBoolean(data.clipContent, true);
 
       normalized.data = {
@@ -433,6 +433,9 @@ export class HistoryManager {
       case 'group': {
         const children = [];
         for (const child of data.children ?? []) {
+          if (child.type === 'frame') {
+            continue;
+          }
           children.push(await this.deserializeNode(child));
         }
         node = new GroupNode({
@@ -451,6 +454,9 @@ export class HistoryManager {
       case 'frame': {
         const children = [];
         for (const child of data.children ?? []) {
+          if (child.type === 'frame') {
+            continue;
+          }
           children.push(await this.deserializeNode(child));
         }
         const legacyBackground =
@@ -463,7 +469,7 @@ export class HistoryManager {
             : (legacyBackground ?? '#ffffff');
         const borderColor = String(data.data?.borderColor ?? style.stroke ?? '#A0A0A0');
         const borderWidthRaw = Number(data.data?.borderWidth ?? style.strokeWidth ?? 1);
-        const borderWidth = Number.isFinite(borderWidthRaw) ? Math.max(0, borderWidthRaw) : 1;
+        const borderWidth = Number.isFinite(borderWidthRaw) ? Math.max(0, Math.round(borderWidthRaw)) : 1;
         node = new FrameNode({
           id: data.id,
           name: data.name,

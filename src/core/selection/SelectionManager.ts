@@ -160,8 +160,9 @@ export class SelectionManager {
 
     if (this.singleMoveTransform) {
       const state = this.singleMoveTransform;
-      let dx = point.x - state.startPoint.x;
-      let dy = point.y - state.startPoint.y;
+      const delta = this.getDeltaInParentSpace(state.node.parent as Container | null, state.startPoint, point);
+      let dx = delta.x;
+      let dy = delta.y;
       if (this.objectSnapEnabled) {
         const snapped = this.getSnappedMoveDelta(
           state.startBounds,
@@ -421,8 +422,10 @@ export class SelectionManager {
     if (this.selectedNodes.size < 2) return;
 
     const nodes = Array.from(this.selectedNodes);
+    if (nodes.some((node) => node instanceof FrameNode)) return;
     const parent = nodes[0].parent as Container | null;
     if (!parent) return;
+    if (nodes.some((node) => node.parent !== parent)) return;
 
     // Preserve original z-order
     const sorted = nodes
@@ -432,23 +435,38 @@ export class SelectionManager {
     const insertIndex = sorted.length
       ? Math.min(...sorted.map((n) => parent.getChildIndex(n)))
       : parent.children.length;
-    const bounds = this.getSelectionBounds();
+    const { minX: groupX, minY: groupY } = sorted
+      .map((node) => this.getNodeBoundsInParentSpace(node))
+      .reduce(
+        (acc, b) => ({
+          minX: Math.min(acc.minX, b.x),
+          minY: Math.min(acc.minY, b.y),
+        }),
+        { minX: Infinity, minY: Infinity }
+      );
 
     // Create group at top-left of bounds and re-parent children with local coords
     const group = new GroupNode({
       children: [],
-      x: bounds.x,
-      y: bounds.y,
+      x: groupX,
+      y: groupY,
     });
 
+    const transforms = sorted.map((node) => ({
+      node,
+      transform: this.captureNodeWorldTransform(node),
+    }));
+
     sorted.forEach((node) => {
-      // Adjust to group's local space
-      node.position.set(node.position.x - bounds.x, node.position.y - bounds.y);
       parent.removeChild(node);
-      group.addChild(node);
     });
 
     parent.addChildAt(group, insertIndex);
+
+    transforms.forEach(({ node, transform }) => {
+      group.addChild(node);
+      this.applyWorldTransformToParent(node, group, transform);
+    });
 
     // Clear selection and select the new group
     this.selectedNodes.clear();
@@ -475,28 +493,22 @@ export class SelectionManager {
 
     const parent = node.parent as Container | null;
     const groupIndex = parent ? parent.getChildIndex(node) : -1;
-    const gScaleX = node.scale.x;
-    const gScaleY = node.scale.y;
-    const gRotation = node.rotation;
-
-    // Move children to world (parent) space
+    // Move children to parent while preserving their world transforms.
     const children = [...node.children] as BaseNode[];
+    const childTransforms = children.map((child) => ({
+      child,
+      transform: this.captureNodeWorldTransform(child),
+    }));
     children.forEach((child) => {
-      const worldPos = node.toGlobal(child.position);
-      // Bake group transform into child
-      child.position.copyFrom(worldPos);
-      child.scale.set(child.scale.x * gScaleX, child.scale.y * gScaleY);
-      child.rotation += gRotation;
-      // Normalize scale back to 1: bake scale into intrinsic size
-      this.normalizeNodeScale(child);
       node.removeChild(child);
     });
 
     // Remove group from parent and insert children at the group's position to preserve z-order
     if (parent) {
       parent.removeChild(node);
-      children.forEach((child, i) => {
+      childTransforms.forEach(({ child, transform }, i) => {
         parent.addChildAt(child, groupIndex + i);
+        this.applyWorldTransformToParent(child, parent, transform);
       });
     }
 
@@ -542,15 +554,6 @@ export class SelectionManager {
     };
   }
 
-  private normalizeNodeScale(node: BaseNode) {
-    if (node.scale.x === 1 && node.scale.y === 1) return;
-    const sx = node.scale.x;
-    const sy = node.scale.y;
-    node.width = node.width * sx;
-    node.height = node.height * sy;
-    node.scale.set(1, 1);
-  }
-
   isSelected(node: BaseNode): boolean {
     return this.selectedNodes.has(node);
   }
@@ -579,8 +582,8 @@ export class SelectionManager {
   deleteSelected(container: Container): BaseNode[] {
     const removed: BaseNode[] = [];
     this.selectedNodes.forEach((node) => {
-      if (node.parent === container) {
-        container.removeChild(node);
+      if (node.parent) {
+        node.parent.removeChild(node);
         removed.push(node);
       }
     });
@@ -1196,6 +1199,33 @@ export class SelectionManager {
     };
   }
 
+  private captureNodeWorldTransform(node: BaseNode): { origin: Point; xAxis: Point; yAxis: Point } {
+    return {
+      origin: node.toGlobal(new Point(0, 0)),
+      xAxis: node.toGlobal(new Point(1, 0)),
+      yAxis: node.toGlobal(new Point(0, 1)),
+    };
+  }
+
+  private applyWorldTransformToParent(
+    node: BaseNode,
+    parent: Container,
+    transform: { origin: Point; xAxis: Point; yAxis: Point }
+  ) {
+    const origin = parent.toLocal(transform.origin);
+    const xAxis = parent.toLocal(transform.xAxis);
+    const yAxis = parent.toLocal(transform.yAxis);
+    const xVector = new Point(xAxis.x - origin.x, xAxis.y - origin.y);
+    const yVector = new Point(yAxis.x - origin.x, yAxis.y - origin.y);
+    const scaleX = Math.hypot(xVector.x, xVector.y) || 1;
+    const scaleY = Math.hypot(yVector.x, yVector.y) || 1;
+    const rotation = Math.atan2(xVector.y, xVector.x);
+
+    node.position.copyFrom(origin);
+    node.rotation = rotation;
+    node.scale.set(scaleX, scaleY);
+  }
+
   private getNodeBoundsInSelectionSpace(node: BaseNode): {
     x: number;
     y: number;
@@ -1257,8 +1287,9 @@ export class SelectionManager {
     const state = this.singleResizeTransform;
     if (!state) return;
 
-    const dx = point.x - state.startPoint.x;
-    const dy = point.y - state.startPoint.y;
+    const delta = this.getDeltaInParentSpace(state.node.parent as Container | null, state.startPoint, point);
+    const dx = delta.x;
+    const dy = delta.y;
     const start = state.startState;
     const handle = state.handle;
     const MIN_SIZE = 10;
@@ -1338,5 +1369,14 @@ export class SelectionManager {
     state.node.width = Math.max(1, Math.round(nextW));
     state.node.height = Math.max(1, Math.round(nextH));
     state.node.position.set(Math.round(nextX), Math.round(nextY));
+  }
+
+  private getDeltaInParentSpace(parent: Container | null, startPoint: Point, point: Point): Point {
+    if (!parent) {
+      return new Point(point.x - startPoint.x, point.y - startPoint.y);
+    }
+    const startLocal = parent.toLocal(startPoint);
+    const currentLocal = parent.toLocal(point);
+    return new Point(currentLocal.x - startLocal.x, currentLocal.y - startLocal.y);
   }
 }

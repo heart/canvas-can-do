@@ -21,6 +21,7 @@ app.useTool('select');
 
 ## Key Features
 
+- Frame creation: via API (`addFrame`) and drag-to-draw frame tool (`useTool('frame')` / `F`)
 - Shapes: rectangle, ellipse, line, star, text, image
 - Transform tools: move, resize, rotate, multi-select
 - Shift to constrain resize ratio
@@ -34,6 +35,7 @@ app.useTool('select');
 ```ts
 // Tools
 app.useTool('rectangle');
+app.useTool('frame'); // drag to draw a frame
 
 // Export raster (PNG/JPG)
 const png = await app.exportRaster({ type: 'png', scope: 'all' });
@@ -140,6 +142,7 @@ Move is rejected (`ok: false`) when:
 - source node is locked
 - destination parent is locked
 - move would create a parent/child cycle (ancestor into descendant)
+- moving a frame into non-root parent (frames are root-only)
 
 ### Atomic Move Behavior
 
@@ -188,6 +191,9 @@ Think of `Frame` as an artboard/container that can also be used as an export bou
 
 ### Frame Behavior
 
+- Frame is **root-only**:
+  - cannot be grouped
+  - cannot be child of group/frame
 - Can contain child nodes (like a container)
 - Has explicit `width` and `height`
 - Supports background color or transparent background
@@ -197,10 +203,12 @@ Think of `Frame` as an artboard/container that can also be used as an export bou
 
 ### Drawing and Moving In/Out of Frame
 
-- Drawing starts in the frame under pointer (if any), otherwise root canvas
+- Frame can be created by API (`addFrame`) or drag tool (`frame` / `F`)
+- Drawing non-frame shapes starts in the frame under pointer (if any), otherwise root canvas
 - Drag/drop can move nodes into a frame (`inside`) or out of a frame (`before`/`after` against external target)
 - Reparent + z-order update happen in one atomic operation
 - World transform is preserved when reparenting so nodes do not visually jump
+- Auto drag-reparent is blocked for group-managed nodes (group or descendants of group)
 
 ### Canvas Presentation (Editor Visual)
 
@@ -329,6 +337,7 @@ This section defines the document model expectations after adding frames and exp
 - Preserve per-node transform and visibility/locking.
 - Preserve frame-specific properties and behavior.
 - Keep backward compatibility with older documents where possible.
+- Enforce frame root-only invariant on import/restore.
 
 ### Required Frame Fields (logical model)
 
@@ -348,6 +357,7 @@ After `exportJSON -> importJSON`:
 - frame bounds/style/clip settings must match
 - locked/visible state must match
 - export output for same scope should remain equivalent
+- frame never appears as a child of group/frame after import normalization
 
 ### Versioning and Migration
 
@@ -366,9 +376,15 @@ Import normalization defaults for frame fields:
 
 - Verify `all/selection/frame` export for PNG/JPG/SVG.
 - Verify frame with `clipContent` on/off.
-- Verify nested frame/group save and reload.
+- Verify frame remains root-only after save/load.
 - Verify lock/visible states survive save/load.
 - Verify undo/redo still works immediately after load.
+
+## Interaction Policy
+
+- Group-first hit test: pointer hover/click on a group or any descendant selects the group.
+- Frame-child-first hit test: inside frame, children are preferred over selecting frame body.
+- Layer panel/API can still select specific child ids directly (`selectNodeById` / `selectNodesById`).
 
 ## Events
 
